@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Agent Town</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main id="stage">
+    <canvas id="town"></canvas>
+    <div id="tooltip" hidden></div>
+    <div id="empty" hidden>
+      <div class="empty-card">
+        <div class="big">🏘️</div>
+        <h2>The town is quiet</h2>
+        <p>No Claude Code activity in this project yet. Start a session (or ask Claude to use sub-agents) and they'll move in.</p>
+        <p class="muted">Want to see it busy? Run <code>npm run demo</code></p>
+      </div>
+    </div>
+  </main>
+  <aside id="panel">
+    <header>
+      <h1>🏘️ Agent Town <span id="conn" class="dot" title="connecting"></span></h1>
+      <span id="mode" class="badge" hidden>DEMO</span>
+    </header>
+    <label class="field">Project
+      <select id="project"></select>
+    </label>
+    <div class="toggles">
+      <label><input type="checkbox" id="showOld"> Show old sessions</label>
+      <label><input type="checkbox" id="allBubbles"> All speech bubbles</label>
+    </div>
+    <div id="stats" class="stats"></div>
+    <h3>Agents</h3>
+    <ul id="agents" class="agents"></ul>
+    <section id="details" hidden></section>
+    <details class="legend">
+      <summary>Legend</summary>
+      <ul id="legend"></ul>
+    </details>
+  </aside>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
