@@ -1,5 +1,6 @@
 // Claude Agent Town: a little pixel town where each Claude Code agent walks to the building
 // that matches what it's doing right now.
+import { buildScenery, drawSceneryAnim, drawSky, PAD_X, PAD_Y } from './scenery.js';
 
 const W = 1600, H = 900;
 const ZW = 260, ZH = 250, GAP = 50, MX = 50;
@@ -75,7 +76,7 @@ function loadPrefs() {
 function savePrefs() {
   try {
     localStorage.setItem('agent-town', JSON.stringify({
-      project: ui.project.value, showOld: ui.showOld.checked, allBubbles: ui.allBubbles.checked,
+      showOld: ui.showOld.checked, allBubbles: ui.allBubbles.checked,
     }));
   } catch { /* storage unavailable */ }
 }
@@ -533,10 +534,12 @@ function frame(t) {
 
   const { scale, ox, oy, dpr } = view;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#4f8a41';
+  ctx.fillStyle = '#5f9e4f';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * ox, dpr * oy);
   ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(scenery.canvas, -PAD_X, -PAD_Y);
+  drawSceneryAnim(ctx, scenery, t);
   ctx.drawImage(bg, 0, 0, W, H);
   drawPortal(ctx, t);
 
@@ -568,6 +571,7 @@ function frame(t) {
     else { ctx.font = '13px "Apple Color Emoji","Segoe UI Emoji",sans-serif'; ctx.fillText(p.text, p.x, p.y); }
   }
   ctx.globalAlpha = 1;
+  drawSky(ctx, scenery, t);
 
   // speech bubbles on top
   const all = ui.allBubbles.checked;
@@ -631,7 +635,7 @@ function renderProjects() {
     p.lastAt = Math.max(p.lastAt, a.lastAt); p.n++;
     byProject.set(a.project, p);
   }
-  const want = ui.project.value || prefs.project || '__auto';
+  const want = ui.project.value || '__all'; // always open on All projects
   const opts = [['__auto', '⚡ Most recently active'], ['__all', '🌍 All projects'],
     ...[...byProject.entries()].sort((a, b) => b[1].lastAt - a[1].lastAt).map(([k, p]) => [k, `${p.name} (${p.n})`])];
   ui.project.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
@@ -717,6 +721,7 @@ function connect() {
 }
 
 drawBackground(bg.getContext('2d'));
+const scenery = buildScenery(W, H, ROAD);
 resize();
 connect();
 setInterval(renderPanel, 1000);
