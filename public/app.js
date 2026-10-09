@@ -97,7 +97,7 @@ function displayName(a) {
   return a.title || a.agentType || 'sub-agent';
 }
 function shortName(a) {
-  if (a.isMain) return trunc(a.projectName, 18);
+  if (a.isMain) return trunc(a.title || a.projectName, 18);
   return trunc(a.title || a.agentType, 18);
 }
 
