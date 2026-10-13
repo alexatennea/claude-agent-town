@@ -25,7 +25,13 @@ and the side panel names the file and who's editing it. Each agent's details lis
 
 **Needs-you alerts:** when a main session finishes its turn, asks you a question, or keeps hitting API errors, its row and
 villager get a 🔔 highlight and the tab title shows a count like `(2) Claude Agent Town` until you look at the tab or click
-the agent. Tick **Notify me when an agent needs me** for browser notifications too (permission is only asked when you tick it).
+the agent. Agents that look stuck (⏳ a tool hung for 5+ minutes, ❌ repeated failing tool calls, 🌀 the same call over
+and over, 📡 repeated API errors) get a marker over their head, a badge in their row and a panel notice, and count as
+needing you too. Tick **Notify me when an agent needs me** for browser notifications too (permission is only asked when you tick it).
+
+**Cost and context:** the panel shows an estimated cost for the visible agents, and each agent's details show its own
+cost, the session total (main session plus all its sub-agents) and a context-window bar that turns amber at 70% and red
+at 90%. Costs use API list prices; on a subscription plan that's an API-equivalent estimate, not a bill.
 
 ## Run it
 

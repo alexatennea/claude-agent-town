@@ -45,6 +45,14 @@ const ACTS = {
   idle: { zone: 'lounge', emoji: '💤', label: 'Idle', fx: ['z'] },
 };
 
+const STUCK = {
+  hung: { emoji: '⏳', label: 'hung' },
+  failing: { emoji: '❌', label: 'failing' },
+  looping: { emoji: '🌀', label: 'looping' },
+  'api-errors': { emoji: '📡', label: 'API errors' },
+};
+const COST_TIP = "API list-price estimate; subscription plans aren't billed per token.";
+
 const STALE_MS = 3 * 60_000; // no writes for this long and not finished → idle
 const RECENT_MS = 30 * 60_000; // hide sessions quieter than this unless "show old"
 const DONE_VISIBLE_MS = 10 * 60_000; // finished sub-agents hang around the lounge this long
@@ -56,7 +64,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   project: $('project'), agents: $('agents'), details: $('details'), stats: $('stats'),
   showOld: $('showOld'), allBubbles: $('allBubbles'), tooltip: $('tooltip'), empty: $('empty'),
-  otherActive: $('otherActive'), collisions: $('collisions'), emptyOther: $('emptyOther'), emptyMsg: $('emptyMsg'),
+  otherActive: $('otherActive'), collisions: $('collisions'), stuck: $('stuck'), emptyOther: $('emptyOther'), emptyMsg: $('emptyMsg'),
   conn: $('conn'), mode: $('mode'), legend: $('legend'), notify: $('notify'), notifyNote: $('notifyNote'),
 };
 
@@ -111,13 +119,24 @@ function stateOf(a) {
   return ACTS[a.activity] ? a.activity : 'thinking';
 }
 
-function relTime(ts) {
-  const s = Math.max(0, Math.round((now() - ts) / 1000));
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  return `${Math.round(s / 3600)}h ago`;
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  return `${Math.round(s / 3600)}h`;
 }
+const relTime = (ts) => `${fmtDur(now() - ts)} ago`;
 const fmtK = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
+const fmtTok = (n) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : fmtK(n));
+function fmtCost(c, unknown) {
+  const v = !c ? '$0.00' : c < 0.01 ? '<$0.01' : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString()}`;
+  return v + (unknown ? '+' : '');
+}
+// Skip the DOM write when nothing changed (renderPanel runs every second).
+function setHtml(el, html) {
+  if (el._html === html) return;
+  el._html = html; el.innerHTML = html;
+}
 
 function isVisible(a) {
   if (ui.showOld.checked) return true;
@@ -170,7 +189,7 @@ function switchProject(v) {
   if (ui.project.value !== v) ui.project.value = '__auto';
   savePrefs(); renderPanel();
 }
-let noticeHtml = '', emptyHtml = '', collideHtml = '';
+let noticeHtml = '', emptyHtml = '', collideHtml = '', stuckHtml = '';
 function renderNotice(o, el, cacheKey, html) {
   const next = o ? html : '';
   if (cacheKey === next) return next;
@@ -220,6 +239,35 @@ function collisionHtml(list) {
     }).join(', ');
     return `<div class="collision" title="${esc(e.path)}">⚠️ ${e.keys.size} agents editing <b>${esc(baseName(e.path))}</b>: ${names}</div>`;
   }).join('') + (list.length > 3 ? `<div class="muted">+${list.length - 3} more file${list.length - 3 === 1 ? '' : 's'}</div>` : '');
+}
+
+// ---------- stuck agents ----------
+const stuckTip = (a) => `Stuck: ${a.stuck.detail || STUCK[a.stuck.reason]?.label || a.stuck.reason} (for ${fmtDur(now() - a.stuck.since)})`;
+function stuckNoticeHtml(list) {
+  return list.slice(0, 3).map((a) => {
+    const k = STUCK[a.stuck.reason] || { emoji: '⚠️', label: a.stuck.reason };
+    return `<div class="stuck-item" title="${esc(stuckTip(a))}">${k.emoji} <a href="#" class="agent-link" data-select="${esc(a.key)}">${esc(trunc(displayName(a), 32))}</a> — ${esc(k.label)}${a.stuck.detail ? `: ${esc(trunc(a.stuck.detail, 90))}` : ''} <span class="muted">(${fmtDur(now() - a.stuck.since)})</span></div>`;
+  }).join('') + (list.length > 3 ? `<div class="muted">+${list.length - 3} more</div>` : '');
+}
+
+// Cost of an agent plus every agent spawned under it (any depth).
+function sessionCost(root) {
+  let cost = 0, unknown = false;
+  for (const o of agents.values()) {
+    let k = o.key;
+    for (let i = 0; k && i < 20; i++) {
+      if (k === root.key) { cost += o.cost || 0; unknown ||= o.costKnown === false; break; }
+      k = agents.get(k)?.parent;
+    }
+  }
+  return { cost, unknown };
+}
+
+function contextBarHtml(a) {
+  const win = a.contextWindow || 200_000, used = a.contextTokens || 0;
+  const pct = Math.min(100, Math.round((used / win) * 100));
+  const cls = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
+  return `<span class="ctxbar ${cls}"><i style="width:${pct}%"></i></span>${fmtK(used)} / ${fmtTok(win)} (${pct}%) · ${fmtK(a.outputTokens)} out`;
 }
 
 // ---------- sprites & movement ----------
@@ -555,6 +603,12 @@ function drawAgent(g, s, a, t) {
     g.restore();
   }
 
+  // stuck marker: centred above the head (clear of the ⚠️ and activity icon), gentle bob
+  if (a.stuck && STUCK[a.stuck.reason]) {
+    g.font = '14px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
+    g.fillText(STUCK[a.stuck.reason].emoji, x, top - 11 + Math.sin(t / 600) * 2);
+  }
+
   // name tag
   g.font = '11px ui-monospace, Menlo, monospace';
   g.textBaseline = 'top';
@@ -563,6 +617,12 @@ function drawAgent(g, s, a, t) {
   g.fillStyle = a.isMain ? 'rgba(120,70,20,.85)' : 'rgba(20,22,30,.75)';
   g.fillRect(x - lw / 2, y + 5, lw, 14);
   g.fillStyle = '#fff'; g.fillText(label, x, y + 7);
+  // context nearly full: thin bar under the name tag
+  const fill = a.contextWindow ? (a.contextTokens || 0) / a.contextWindow : 0;
+  if (fill >= 0.7) {
+    g.fillStyle = 'rgba(20,22,30,.75)'; g.fillRect(x - lw / 2, y + 19, lw, 3);
+    g.fillStyle = fill >= 0.9 ? '#e05d5d' : '#f2c14e'; g.fillRect(x - lw / 2, y + 19, lw * Math.min(1, fill), 3);
+  }
 }
 
 function drawBubble(g, s, a, t) {
@@ -577,7 +637,7 @@ function drawBubble(g, s, a, t) {
   g.font = '12px ui-monospace, Menlo, monospace';
   const tw = g.measureText(text).width;
   const bw = tw + 14, bh = 22;
-  const bx = Math.round(s.x - bw / 2), by = Math.round(s.y - 78);
+  const bx = Math.round(s.x - bw / 2), by = Math.round(s.y - 78 - (a.stuck ? 16 : 0)); // clear the stuck marker
   g.fillStyle = st === 'thinking' ? 'rgba(255,255,255,.85)' : '#fffdf5';
   g.strokeStyle = '#1b1d26'; g.lineWidth = 2;
   roundRect(g, bx, by, bw, bh, 6); g.fill(); g.stroke();
@@ -778,12 +838,16 @@ function renderPanel() {
   const vis = visibleAgents();
   const clash = collisionsFor(vis);
   collideHtml = renderNotice(clash.length, ui.collisions, collideHtml, clash.length && collisionHtml(clash));
+  const stuck = vis.filter((a) => a.stuck).sort((p, q) => p.stuck.since - q.stuck.since);
+  stuckHtml = renderNotice(stuck.length, ui.stuck, stuckHtml, stuck.length && stuckNoticeHtml(stuck));
   const states = vis.map(stateOf);
   const working = states.filter((s) => !['idle', 'done', 'waiting'].includes(s)).length;
-  ui.stats.innerHTML = `
+  const cost = vis.reduce((t, a) => t + (a.cost || 0), 0);
+  setHtml(ui.stats, `
     <div class="stat"><b>${vis.length}</b><span>agents</span></div>
     <div class="stat"><b>${working}</b><span>working</span></div>
-    <div class="stat"><b>${vis.filter((a) => !a.isMain).length}</b><span>sub-agents</span></div>`;
+    <div class="stat"><b>${vis.filter((a) => !a.isMain).length}</b><span>sub-agents</span></div>
+    <div class="stat" title="${esc(COST_TIP)}"><b>${fmtCost(cost, vis.some((a) => a.costKnown === false))}</b><span>est. cost</span></div>`);
 
   // tree order: roots by recency, children beneath their parent
   const kids = new Map();
@@ -799,7 +863,7 @@ function renderPanel() {
     (kids.get(a.key) || []).sort((p, q) => p.startedAt - q.startedAt).forEach((c) => walk(c, depth + 1));
   };
   roots.sort((p, q) => q.lastAt - p.lastAt).forEach((r) => walk(r, 0));
-  ui.agents.innerHTML = rows.map(([a, depth]) => {
+  setHtml(ui.agents, rows.map(([a, depth]) => {
     const st = stateOf(a);
     const s = sprites.get(a.key);
     const cf = [...new Set((a.collisions || []).map((c) => relPath(a, c.path)))];
@@ -807,15 +871,16 @@ function renderPanel() {
     return `<li data-key="${esc(a.key)}" class="${a.key === selected ? 'sel' : ''} ${['done', 'idle'].includes(st) ? 'faded' : ''} ${alert ? 'needs' : ''}" style="padding-left:${6 + depth * 16}px"${alert ? ` title="Needs you: ${esc(ALERT_TEXT[alert.reason])}"` : ''}>
       <span class="swatch" style="background:${s ? s.shirt : '#888'}"></span>
       <span class="name" title="${esc(displayName(a))}">${a.isMain ? '👑 ' : depth ? '↳ ' : ''}${esc(displayName(a))}</span>
-      <span class="act">${alert ? '🔔 ' : ''}${cf.length ? `<span class="warn" title="${esc(`Also being edited by another agent: ${cf.join(', ')}`)}">⚠️</span> ` : ''}${ACTS[st].emoji} ${esc(ACTS[st].label)}</span></li>`;
-  }).join('');
+      <span class="act">${alert ? '🔔 ' : ''}${a.stuck && STUCK[a.stuck.reason] ? `<span class="warn" title="${esc(stuckTip(a))}">${STUCK[a.stuck.reason].emoji}</span> ` : ''}${cf.length ? `<span class="warn" title="${esc(`Also being edited by another agent: ${cf.join(', ')}`)}">⚠️</span> ` : ''}${ACTS[st].emoji} ${esc(ACTS[st].label)}</span></li>`;
+  }).join(''));
 
   const a = selected && agents.get(selected);
   ui.details.hidden = !a;
   if (!a) return;
   const st = stateOf(a);
   const parent = a.parent && agents.get(a.parent);
-  ui.details.innerHTML = `
+  const total = a.isMain && sessionCost(a);
+  setHtml(ui.details, `
     <h4>${a.isMain ? '👑 ' : ''}${esc(displayName(a))}</h4>
     <div class="kv">
       <span>Status</span><span>${ACTS[st].emoji} ${esc(ACTS[st].label)}${a.detail && !['done', 'idle', 'waiting'].includes(st) ? `: ${esc(a.detail)}` : ''}</span>
@@ -823,14 +888,16 @@ function renderPanel() {
       ${parent ? `<span>Spawned by</span><span>${esc(trunc(displayName(parent), 60))}</span>` : ''}
       <span>Project</span><span>${esc(a.projectName)}${a.branch ? ` · ${esc(a.branch)}` : ''}</span>
       <span>Model</span><span>${esc(a.model || '?')}</span>
-      <span>Context</span><span>${fmtK(a.contextTokens)} tokens · ${fmtK(a.outputTokens)} out</span>
+      ${a.stuck ? `<span>Stuck</span><span class="stuck-kv">${STUCK[a.stuck.reason]?.emoji || '⚠️'} ${esc(stuckTip(a).replace(/^Stuck: /, ''))}</span>` : ''}
+      <span>Context</span><span>${contextBarHtml(a)}</span>
+      <span>Est. cost</span><span title="${esc(COST_TIP)}">${fmtCost(a.cost, a.costKnown === false)} (this agent)${total ? ` · session total ${fmtCost(total.cost, total.unknown)}` : ''}</span>
       <span>Tool calls</span><span>${a.toolCalls}</span>
       <span>Started</span><span>${relTime(a.startedAt)}</span>
       <span>Last seen</span><span>${relTime(a.lastAt)}</span>
     </div>
     ${a.task ? `<div class="task">${esc(a.task)}</div>` : ''}
     ${filesHtml(a)}
-    <ul class="log">${[...a.events].reverse().map((e) => `<li><time>${new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${esc(e.text)}</span></li>`).join('')}</ul>`;
+    <ul class="log">${[...a.events].reverse().map((e) => `<li><time>${new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${esc(e.text)}</span></li>`).join('')}</ul>`);
 }
 
 const FILES_SHOWN = 10;
@@ -856,15 +923,17 @@ const ALERT_TEXT = {
   waiting: 'finished its turn and is waiting for you',
   question: 'is asking you a question',
   errors: 'keeps hitting API errors',
+  stuck: 'looks stuck',
 };
 const needReasons = new Map(); // key -> last reason seen (null = doesn't need you)
 const alerts = new Map(); // key -> { reason, seen }
 
 function needReason(a) {
-  if (!a.isMain) return null;
+  if (!a.isMain) return a.stuck ? 'stuck' : null;
   if (a.apiErrors >= API_ERROR_ALERT) return 'errors';
   if (a.activity === 'talking' && a.detail === 'asking you a question') return 'question';
   if (a.waitingForUser) return 'waiting';
+  if (a.stuck) return 'stuck';
   return null;
 }
 
