@@ -20,6 +20,9 @@ linked to its parent by a dashed line. Each agent walks to the building that mat
 
 Click an agent (or a row in the side panel) to see its brief, model, context size, and a live log of what it's been doing.
 
+If two unrelated agents edit the same file within 15 minutes, both get a pulsing ⚠️ and a red dashed line between them,
+and the side panel names the file and who's editing it. Each agent's details list the files it has edited.
+
 **Needs-you alerts:** when a main session finishes its turn, asks you a question, or keeps hitting API errors, its row and
 villager get a 🔔 highlight and the tab title shows a count like `(2) Claude Agent Town` until you look at the tab or click
 the agent. Tick **Notify me when an agent needs me** for browser notifications too (permission is only asked when you tick it).
