@@ -56,7 +56,7 @@ const ui = {
   project: $('project'), agents: $('agents'), details: $('details'), stats: $('stats'),
   showOld: $('showOld'), allBubbles: $('allBubbles'), tooltip: $('tooltip'), empty: $('empty'),
   otherActive: $('otherActive'), emptyOther: $('emptyOther'), emptyMsg: $('emptyMsg'),
-  conn: $('conn'), mode: $('mode'), legend: $('legend'),
+  conn: $('conn'), mode: $('mode'), legend: $('legend'), notify: $('notify'), notifyNote: $('notifyNote'),
 };
 
 let agents = new Map(); // key -> server agent
@@ -69,6 +69,7 @@ const particles = [];
 const prefs = loadPrefs();
 ui.showOld.checked = !!prefs.showOld;
 ui.allBubbles.checked = !!prefs.allBubbles;
+ui.notify.checked = !!prefs.notify && 'Notification' in window && Notification.permission === 'granted';
 
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem('agent-town') || '{}'); } catch { return {}; }
@@ -76,7 +77,7 @@ function loadPrefs() {
 function savePrefs() {
   try {
     localStorage.setItem('agent-town', JSON.stringify({
-      project: ui.project.value, showOld: ui.showOld.checked, allBubbles: ui.allBubbles.checked,
+      project: ui.project.value, showOld: ui.showOld.checked, allBubbles: ui.allBubbles.checked, notify: ui.notify.checked,
     }));
   } catch { /* storage unavailable */ }
 }
@@ -449,7 +450,12 @@ function drawAgent(g, s, a, t) {
   const legA = s.path.length ? Math.sin(s.walk) * 3 : 0;
   g.globalAlpha = sleepy ? 0.7 : 1;
 
-  // selection ring + shadow
+  // "needs you" pulse, then selection ring + shadow
+  if (alerts.has(s.key)) {
+    const p = (t % 1400) / 1400;
+    g.strokeStyle = `rgba(242,193,78,${(1 - p) * 0.9})`;
+    g.lineWidth = 3; g.beginPath(); g.ellipse(x, y, 14 + p * 14, 5 + p * 5, 0, 0, 7); g.stroke();
+  }
   if (selected === s.key || hovered === s.key) {
     g.strokeStyle = selected === s.key ? '#d97757' : 'rgba(255,255,255,.8)';
     g.lineWidth = 2; g.beginPath(); g.ellipse(x, y, 16, 6, 0, 0, 7); g.stroke();
@@ -493,7 +499,7 @@ function drawAgent(g, s, a, t) {
   // activity icon
   g.font = '15px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
   g.textAlign = 'center'; g.textBaseline = 'bottom';
-  const icon = s.path.length && !sleepy ? '🏃' : ACTS[st].emoji;
+  const icon = alerts.has(s.key) ? '🔔' : s.path.length && !sleepy ? '🏃' : ACTS[st].emoji;
   g.fillText(icon, x + 15, top + 2 + Math.sin(t / 250) * 1.5);
 
   // name tag
@@ -656,6 +662,7 @@ canvas.addEventListener('click', (ev) => { const a = agentAt(ev); select(a ? a.k
 
 function select(key) {
   selected = key;
+  if (key) dismissAlert(key);
   renderPanel();
 }
 
@@ -712,10 +719,11 @@ function renderPanel() {
   ui.agents.innerHTML = rows.map(([a, depth]) => {
     const st = stateOf(a);
     const s = sprites.get(a.key);
-    return `<li data-key="${esc(a.key)}" class="${a.key === selected ? 'sel' : ''} ${['done', 'idle'].includes(st) ? 'faded' : ''}" style="padding-left:${6 + depth * 16}px">
+    const alert = alerts.get(a.key);
+    return `<li data-key="${esc(a.key)}" class="${a.key === selected ? 'sel' : ''} ${['done', 'idle'].includes(st) ? 'faded' : ''} ${alert ? 'needs' : ''}" style="padding-left:${6 + depth * 16}px"${alert ? ` title="Needs you: ${esc(ALERT_TEXT[alert.reason])}"` : ''}>
       <span class="swatch" style="background:${s ? s.shirt : '#888'}"></span>
       <span class="name" title="${esc(displayName(a))}">${a.isMain ? '👑 ' : depth ? '↳ ' : ''}${esc(displayName(a))}</span>
-      <span class="act">${ACTS[st].emoji} ${esc(ACTS[st].label)}</span></li>`;
+      <span class="act">${alert ? '🔔 ' : ''}${ACTS[st].emoji} ${esc(ACTS[st].label)}</span></li>`;
   }).join('');
 
   const a = selected && agents.get(selected);
@@ -742,6 +750,83 @@ function renderPanel() {
 
 ui.legend.innerHTML = Object.entries(ACTS).map(([, v]) => `<li>${v.emoji} ${esc(v.label)} → ${esc(ZONE[v.zone].name)}</li>`).join('');
 
+// ---------- "needs you" alerts ----------
+const BASE_TITLE = document.title;
+const API_ERROR_ALERT = 2; // consecutive API errors before we bother the user
+const ALERT_TEXT = {
+  waiting: 'finished its turn and is waiting for you',
+  question: 'is asking you a question',
+  errors: 'keeps hitting API errors',
+};
+const needReasons = new Map(); // key -> last reason seen (null = doesn't need you)
+const alerts = new Map(); // key -> { reason, seen }
+
+function needReason(a) {
+  if (!a.isMain) return null;
+  if (a.apiErrors >= API_ERROR_ALERT) return 'errors';
+  if (a.activity === 'talking' && a.detail === 'asking you a question') return 'question';
+  if (a.waitingForUser) return 'waiting';
+  return null;
+}
+
+const lookingAtTab = () => document.visibilityState === 'visible' && document.hasFocus();
+
+// Only transitions seen live raise alerts; the first snapshot just records where everyone is.
+function updateAlerts(initial) {
+  for (const a of agents.values()) {
+    const reason = needReason(a);
+    const prev = needReasons.get(a.key);
+    needReasons.set(a.key, reason);
+    if (!reason) { alerts.delete(a.key); continue; }
+    if (initial || reason === prev) continue;
+    alerts.set(a.key, { reason, seen: lookingAtTab() });
+    if (!lookingAtTab()) notify(a, reason);
+  }
+  for (const key of alerts.keys()) if (!agents.has(key)) alerts.delete(key);
+  renderTitle();
+}
+
+function renderTitle() {
+  const n = [...alerts.values()].filter((x) => !x.seen).length;
+  document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
+}
+
+function markAlertsSeen() {
+  if (!lookingAtTab()) return;
+  for (const x of alerts.values()) x.seen = true;
+  renderTitle();
+}
+document.addEventListener('visibilitychange', markAlertsSeen);
+window.addEventListener('focus', markAlertsSeen);
+
+function dismissAlert(key) {
+  if (alerts.delete(key)) renderTitle();
+}
+
+function notify(a, reason) {
+  if (!ui.notify.checked || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(`${trunc(displayName(a), 60)} needs you`, {
+      body: `${a.projectName}: ${ALERT_TEXT[reason]}`, tag: `agent-town:${a.key}`,
+    });
+    n.onclick = () => { window.focus(); select(a.key); n.close(); };
+  } catch { /* some browsers only allow notifications from a service worker */ }
+}
+
+ui.notify.addEventListener('change', async () => {
+  ui.notifyNote.hidden = true;
+  if (ui.notify.checked) {
+    let perm = 'Notification' in window ? Notification.permission : 'unsupported';
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      ui.notify.checked = false;
+      ui.notifyNote.textContent = perm === 'unsupported' ? 'This browser does not support notifications.' : 'Notifications are blocked for this page in your browser settings.';
+      ui.notifyNote.hidden = false;
+    }
+  }
+  savePrefs();
+});
+
 // ---------- live data ----------
 function connect() {
   const es = new EventSource('/events');
@@ -752,6 +837,7 @@ function connect() {
     clockOffset = data.now - Date.now();
     ui.mode.hidden = !data.demo;
     agents = new Map(data.agents.map((a) => [a.key, a]));
+    updateAlerts(firstSnapshot);
     renderProjects();
     if (firstSnapshot) {
       // Place everyone already in town at their spot instead of streaming out of the portal.
