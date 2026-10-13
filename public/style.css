@@ -46,6 +46,7 @@ h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: v
 .field { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; color: var(--muted); }
 select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
 .toggles { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; color: var(--muted); }
+.toggles .note { font-size: 12px; color: var(--warn); }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
 .stat { background: var(--panel-2); border-radius: 8px; padding: 8px; text-align: center; }
@@ -60,6 +61,8 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid var(-
 .agents li:hover { background: var(--panel-2); }
 .agents li.sel { background: #3b3446; outline: 1px solid var(--accent); }
 .agents li.faded { opacity: .55; }
+.agents li.needs { box-shadow: inset 3px 0 0 var(--warn); background: rgba(242, 193, 78, .12); }
+.agents li.needs.faded { opacity: 1; }
 .agents .swatch { width: 12px; height: 12px; border-radius: 3px; }
 .agents .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agents .act { color: var(--muted); font-size: 12px; white-space: nowrap; }
