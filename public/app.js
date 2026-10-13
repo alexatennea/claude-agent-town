@@ -56,7 +56,8 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   project: $('project'), agents: $('agents'), details: $('details'), stats: $('stats'),
   showOld: $('showOld'), allBubbles: $('allBubbles'), tooltip: $('tooltip'), empty: $('empty'),
-  conn: $('conn'), mode: $('mode'), legend: $('legend'),
+  otherActive: $('otherActive'), collisions: $('collisions'), emptyOther: $('emptyOther'), emptyMsg: $('emptyMsg'),
+  conn: $('conn'), mode: $('mode'), legend: $('legend'), notify: $('notify'), notifyNote: $('notifyNote'),
 };
 
 let agents = new Map(); // key -> server agent
@@ -69,6 +70,7 @@ const particles = [];
 const prefs = loadPrefs();
 ui.showOld.checked = !!prefs.showOld;
 ui.allBubbles.checked = !!prefs.allBubbles;
+ui.notify.checked = !!prefs.notify && 'Notification' in window && Notification.permission === 'granted';
 
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem('agent-town') || '{}'); } catch { return {}; }
@@ -76,7 +78,7 @@ function loadPrefs() {
 function savePrefs() {
   try {
     localStorage.setItem('agent-town', JSON.stringify({
-      showOld: ui.showOld.checked, allBubbles: ui.allBubbles.checked,
+      showOld: ui.showOld.checked, allBubbles: ui.allBubbles.checked, notify: ui.notify.checked,
     }));
   } catch { /* storage unavailable */ }
 }
@@ -140,6 +142,84 @@ let autoPick = null;
 function visibleAgents() {
   const p = currentProject();
   return [...agents.values()].filter((a) => (p === '__all' || a.project === p) && isVisible(a));
+}
+
+// Active (or waiting-for-user) sessions in projects other than the selected one.
+function otherActive() {
+  const p = ui.project.value;
+  if (p === '__auto' || p === '__all') return null;
+  const projects = new Map(); // project -> { name, roots:Set }
+  for (const a of agents.values()) {
+    if (a.project === p || now() - a.lastAt > RECENT_MS) continue;
+    const st = stateOf(a);
+    if (st === 'done' || st === 'idle' || (st === 'waiting' && !a.isMain)) continue;
+    const e = projects.get(a.project) || { key: a.project, name: a.projectName, roots: new Set() };
+    e.roots.add(a.isMain ? a.key : a.parent || a.key);
+    projects.set(a.project, e);
+  }
+  if (!projects.size) return null;
+  const list = [...projects.values()];
+  return { n: list.reduce((s, e) => s + e.roots.size, 0), names: list.map((e) => e.name), target: list.length === 1 ? list[0].key : '__auto' };
+}
+function otherActiveHtml(o) {
+  const names = o.names.slice(0, 3).map(esc).join(', ') + (o.names.length > 3 ? '…' : '');
+  return `⚡ ${o.n} active session${o.n === 1 ? '' : 's'} in ${o.names.length === 1 ? names : `other projects: ${names}`} <button type="button" data-switch="${esc(o.target)}">Show</button>`;
+}
+function switchProject(v) {
+  ui.project.value = v;
+  if (ui.project.value !== v) ui.project.value = '__auto';
+  savePrefs(); renderPanel();
+}
+let noticeHtml = '', emptyHtml = '', collideHtml = '';
+function renderNotice(o, el, cacheKey, html) {
+  const next = o ? html : '';
+  if (cacheKey === next) return next;
+  el.innerHTML = next; el.hidden = !next;
+  return next;
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest && ev.target.closest('button[data-switch]');
+  if (b) switchProject(b.dataset.switch);
+  const sel = ev.target.closest && ev.target.closest('[data-select]');
+  if (sel) { ev.preventDefault(); if (agents.has(sel.dataset.select)) select(sel.dataset.select); }
+});
+
+// ---------- file collisions ----------
+const baseName = (p) => String(p || '').split(/[\\/]/).pop();
+function relPath(a, p) {
+  const root = String(a.project || '').replace(/[\\/]+$/, '');
+  return root && p.startsWith(root + '/') ? p.slice(root.length + 1) : p;
+}
+// Names an agent; tags it with its project when that differs from `ctxProject`.
+function agentLabel(k, ctxProject) {
+  const o = agents.get(k);
+  if (!o) return 'unknown agent';
+  return o.project !== ctxProject ? `${shortName(o)} (${o.projectName})` : shortName(o);
+}
+// One entry per colliding file among visible agents, deduped across the agents that report it.
+function collisionsFor(vis) {
+  const byPath = new Map(); // path -> { path, keys:Set, at, project }
+  for (const a of vis) {
+    for (const c of a.collisions || []) {
+      const e = byPath.get(c.path) || { path: c.path, keys: new Set(), at: c.at, project: a.project };
+      e.keys.add(a.key);
+      for (const k of c.with) if (agents.has(k)) e.keys.add(k);
+      e.at = Math.max(e.at, c.at);
+      byPath.set(c.path, e);
+    }
+  }
+  return [...byPath.values()].filter((e) => e.keys.size > 1).sort((x, y) => y.at - x.at);
+}
+function collisionHtml(list) {
+  return list.slice(0, 3).map((e) => {
+    const labels = [...e.keys].map((k) => agentLabel(k, e.project));
+    const seen = {}; // number same-named agents so "Fix tests, Fix tests" reads as "#1, #2"
+    const names = [...e.keys].map((k, i) => {
+      const l = labels[i], dup = labels.filter((x) => x === l).length > 1;
+      return `<a href="#" class="agent-link" data-select="${esc(k)}">${esc(dup ? `${l} #${(seen[l] = (seen[l] || 0) + 1)}` : l)}</a>`;
+    }).join(', ');
+    return `<div class="collision" title="${esc(e.path)}">⚠️ ${e.keys.size} agents editing <b>${esc(baseName(e.path))}</b>: ${names}</div>`;
+  }).join('') + (list.length > 3 ? `<div class="muted">+${list.length - 3} more file${list.length - 3 === 1 ? '' : 's'}</div>` : '');
 }
 
 // ---------- sprites & movement ----------
@@ -411,7 +491,12 @@ function drawAgent(g, s, a, t) {
   const legA = s.path.length ? Math.sin(s.walk) * 3 : 0;
   g.globalAlpha = sleepy ? 0.7 : 1;
 
-  // selection ring + shadow
+  // "needs you" pulse, then selection ring + shadow
+  if (alerts.has(s.key)) {
+    const p = (t % 1400) / 1400;
+    g.strokeStyle = `rgba(242,193,78,${(1 - p) * 0.9})`;
+    g.lineWidth = 3; g.beginPath(); g.ellipse(x, y, 14 + p * 14, 5 + p * 5, 0, 0, 7); g.stroke();
+  }
   if (selected === s.key || hovered === s.key) {
     g.strokeStyle = selected === s.key ? '#d97757' : 'rgba(255,255,255,.8)';
     g.lineWidth = 2; g.beginPath(); g.ellipse(x, y, 16, 6, 0, 0, 7); g.stroke();
@@ -455,8 +540,20 @@ function drawAgent(g, s, a, t) {
   // activity icon
   g.font = '15px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
   g.textAlign = 'center'; g.textBaseline = 'bottom';
-  const icon = s.path.length && !sleepy ? '🏃' : ACTS[st].emoji;
+  const icon = alerts.has(s.key) ? '🔔' : s.path.length && !sleepy ? '🏃' : ACTS[st].emoji;
   g.fillText(icon, x + 15, top + 2 + Math.sin(t / 250) * 1.5);
+
+  // file-collision warning: pulsing marker over the opposite shoulder from the activity icon
+  if (a.collisions?.length) {
+    const pulse = 1 + Math.sin(t / 180) * 0.15;
+    g.save();
+    g.translate(x - 14, top - 4);
+    g.scale(pulse, pulse);
+    g.globalAlpha = 0.75 + Math.sin(t / 180) * 0.25;
+    g.font = '15px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
+    g.fillText('⚠️', 0, 0);
+    g.restore();
+  }
 
   // name tag
   g.font = '11px ui-monospace, Menlo, monospace';
@@ -520,6 +617,30 @@ function drawLinks(g, vis, t) {
   g.restore();
 }
 
+// Red dashed line between visible agents editing the same file.
+function drawCollisionLinks(g, vis, t) {
+  const seen = new Set(), shown = new Set(vis.map((a) => a.key));
+  g.save();
+  g.setLineDash([4, 5]);
+  g.lineDashOffset = -t / 30;
+  g.strokeStyle = '#e05d5d';
+  g.lineWidth = 2.5;
+  g.globalAlpha = 0.6 + Math.sin(t / 180) * 0.2;
+  for (const a of vis) {
+    for (const c of a.collisions || []) {
+      for (const k of c.with) {
+        const pair = a.key < k ? `${a.key}|${k}` : `${k}|${a.key}`;
+        if (seen.has(pair)) continue;
+        seen.add(pair);
+        const s1 = sprites.get(a.key), s2 = sprites.get(k);
+        if (!s1 || !s2 || !shown.has(k)) continue;
+        g.beginPath(); g.moveTo(s1.x, s1.y - 24); g.lineTo(s2.x, s2.y - 24); g.stroke();
+      }
+    }
+  }
+  g.restore();
+}
+
 let lastT = performance.now();
 function frame(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000);
@@ -554,6 +675,7 @@ function frame(t) {
   }
 
   drawLinks(ctx, vis, t);
+  drawCollisionLinks(ctx, vis, t);
 
   const ordered = vis.map((a) => [a, sprites.get(a.key)]).sort((p, q) => p[1].y - q[1].y);
   for (const [a, s] of ordered) drawAgent(ctx, s, a, t);
@@ -581,6 +703,11 @@ function frame(t) {
   }
 
   ui.empty.hidden = vis.length > 0;
+  if (!ui.empty.hidden) {
+    const o = otherActive();
+    emptyHtml = renderNotice(o, ui.emptyOther, emptyHtml, o && otherActiveHtml(o));
+    ui.emptyMsg.hidden = !!o;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -616,6 +743,7 @@ canvas.addEventListener('click', (ev) => { const a = agentAt(ev); select(a ? a.k
 
 function select(key) {
   selected = key;
+  if (key) dismissAlert(key);
   renderPanel();
 }
 
@@ -645,7 +773,11 @@ function renderProjects() {
 }
 
 function renderPanel() {
+  const o = otherActive();
+  noticeHtml = renderNotice(o, ui.otherActive, noticeHtml, o && otherActiveHtml(o));
   const vis = visibleAgents();
+  const clash = collisionsFor(vis);
+  collideHtml = renderNotice(clash.length, ui.collisions, collideHtml, clash.length && collisionHtml(clash));
   const states = vis.map(stateOf);
   const working = states.filter((s) => !['idle', 'done', 'waiting'].includes(s)).length;
   ui.stats.innerHTML = `
@@ -670,10 +802,12 @@ function renderPanel() {
   ui.agents.innerHTML = rows.map(([a, depth]) => {
     const st = stateOf(a);
     const s = sprites.get(a.key);
-    return `<li data-key="${esc(a.key)}" class="${a.key === selected ? 'sel' : ''} ${['done', 'idle'].includes(st) ? 'faded' : ''}" style="padding-left:${6 + depth * 16}px">
+    const cf = [...new Set((a.collisions || []).map((c) => relPath(a, c.path)))];
+    const alert = alerts.get(a.key);
+    return `<li data-key="${esc(a.key)}" class="${a.key === selected ? 'sel' : ''} ${['done', 'idle'].includes(st) ? 'faded' : ''} ${alert ? 'needs' : ''}" style="padding-left:${6 + depth * 16}px"${alert ? ` title="Needs you: ${esc(ALERT_TEXT[alert.reason])}"` : ''}>
       <span class="swatch" style="background:${s ? s.shirt : '#888'}"></span>
       <span class="name" title="${esc(displayName(a))}">${a.isMain ? '👑 ' : depth ? '↳ ' : ''}${esc(displayName(a))}</span>
-      <span class="act">${ACTS[st].emoji} ${esc(ACTS[st].label)}</span></li>`;
+      <span class="act">${alert ? '🔔 ' : ''}${cf.length ? `<span class="warn" title="${esc(`Also being edited by another agent: ${cf.join(', ')}`)}">⚠️</span> ` : ''}${ACTS[st].emoji} ${esc(ACTS[st].label)}</span></li>`;
   }).join('');
 
   const a = selected && agents.get(selected);
@@ -695,10 +829,102 @@ function renderPanel() {
       <span>Last seen</span><span>${relTime(a.lastAt)}</span>
     </div>
     ${a.task ? `<div class="task">${esc(a.task)}</div>` : ''}
+    ${filesHtml(a)}
     <ul class="log">${[...a.events].reverse().map((e) => `<li><time>${new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${esc(e.text)}</span></li>`).join('')}</ul>`;
 }
 
+const FILES_SHOWN = 10;
+function filesHtml(a) {
+  const files = a.files || [];
+  if (!files.length) return '';
+  const clash = new Map((a.collisions || []).map((c) => [c.path, c]));
+  const items = files.slice(0, FILES_SHOWN).map((f) => {
+    const c = clash.get(f.path);
+    const who = c && c.with.map((k) => agentLabel(k, a.project)).join(', ');
+    return `<li class="${c ? 'clash' : ''}" title="${esc(f.path)}"><span>${c ? '⚠️ ' : ''}${esc(relPath(a, f.path))}${c ? `<em>also edited by ${esc(who)}</em>` : ''}</span><time>${relTime(f.ts)}</time></li>`;
+  }).join('');
+  const more = files.length > FILES_SHOWN ? `<li class="more muted">+${files.length - FILES_SHOWN} more</li>` : '';
+  return `<h5>Files edited (${files.length})</h5><ul class="files">${items}${more}</ul>`;
+}
+
 ui.legend.innerHTML = Object.entries(ACTS).map(([, v]) => `<li>${v.emoji} ${esc(v.label)} → ${esc(ZONE[v.zone].name)}</li>`).join('');
+
+// ---------- "needs you" alerts ----------
+const BASE_TITLE = document.title;
+const API_ERROR_ALERT = 2; // consecutive API errors before we bother the user
+const ALERT_TEXT = {
+  waiting: 'finished its turn and is waiting for you',
+  question: 'is asking you a question',
+  errors: 'keeps hitting API errors',
+};
+const needReasons = new Map(); // key -> last reason seen (null = doesn't need you)
+const alerts = new Map(); // key -> { reason, seen }
+
+function needReason(a) {
+  if (!a.isMain) return null;
+  if (a.apiErrors >= API_ERROR_ALERT) return 'errors';
+  if (a.activity === 'talking' && a.detail === 'asking you a question') return 'question';
+  if (a.waitingForUser) return 'waiting';
+  return null;
+}
+
+const lookingAtTab = () => document.visibilityState === 'visible' && document.hasFocus();
+
+// Only transitions seen live raise alerts; the first snapshot just records where everyone is.
+function updateAlerts(initial) {
+  for (const a of agents.values()) {
+    const reason = needReason(a);
+    const prev = needReasons.get(a.key);
+    needReasons.set(a.key, reason);
+    if (!reason) { alerts.delete(a.key); continue; }
+    if (initial || reason === prev) continue;
+    alerts.set(a.key, { reason, seen: lookingAtTab() });
+    if (!lookingAtTab()) notify(a, reason);
+  }
+  for (const key of alerts.keys()) if (!agents.has(key)) alerts.delete(key);
+  renderTitle();
+}
+
+function renderTitle() {
+  const n = [...alerts.values()].filter((x) => !x.seen).length;
+  document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
+}
+
+function markAlertsSeen() {
+  if (!lookingAtTab()) return;
+  for (const x of alerts.values()) x.seen = true;
+  renderTitle();
+}
+document.addEventListener('visibilitychange', markAlertsSeen);
+window.addEventListener('focus', markAlertsSeen);
+
+function dismissAlert(key) {
+  if (alerts.delete(key)) renderTitle();
+}
+
+function notify(a, reason) {
+  if (!ui.notify.checked || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(`${trunc(displayName(a), 60)} needs you`, {
+      body: `${a.projectName}: ${ALERT_TEXT[reason]}`, tag: `agent-town:${a.key}`,
+    });
+    n.onclick = () => { window.focus(); select(a.key); n.close(); };
+  } catch { /* some browsers only allow notifications from a service worker */ }
+}
+
+ui.notify.addEventListener('change', async () => {
+  ui.notifyNote.hidden = true;
+  if (ui.notify.checked) {
+    let perm = 'Notification' in window ? Notification.permission : 'unsupported';
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      ui.notify.checked = false;
+      ui.notifyNote.textContent = perm === 'unsupported' ? 'This browser does not support notifications.' : 'Notifications are blocked for this page in your browser settings.';
+      ui.notifyNote.hidden = false;
+    }
+  }
+  savePrefs();
+});
 
 // ---------- live data ----------
 function connect() {
@@ -710,6 +936,7 @@ function connect() {
     clockOffset = data.now - Date.now();
     ui.mode.hidden = !data.demo;
     agents = new Map(data.agents.map((a) => [a.key, a]));
+    updateAlerts(firstSnapshot);
     renderProjects();
     if (firstSnapshot) {
       // Place everyone already in town at their spot instead of streaming out of the portal.
