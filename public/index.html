@@ -14,7 +14,8 @@
       <div class="empty-card">
         <div class="big">🏘️</div>
         <h2>The town is quiet</h2>
-        <p>No Claude Code activity in this project yet. Start a session (or ask Claude to use sub-agents) and they'll move in.</p>
+        <p id="emptyMsg">No Claude Code activity in this project yet. Start a session (or ask Claude to use sub-agents) and they'll move in.</p>
+        <div id="emptyOther" class="notice" hidden></div>
         <p class="muted">Want to see it busy? Run <code>npm run demo</code></p>
       </div>
     </div>
@@ -27,6 +28,7 @@
     <label class="field">Project
       <select id="project"></select>
     </label>
+    <div id="otherActive" class="notice" hidden></div>
     <div class="toggles">
       <label><input type="checkbox" id="showOld"> Show old sessions</label>
       <label><input type="checkbox" id="allBubbles"> All speech bubbles</label>

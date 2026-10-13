@@ -55,6 +55,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   project: $('project'), agents: $('agents'), details: $('details'), stats: $('stats'),
   showOld: $('showOld'), allBubbles: $('allBubbles'), tooltip: $('tooltip'), empty: $('empty'),
+  otherActive: $('otherActive'), emptyOther: $('emptyOther'), emptyMsg: $('emptyMsg'),
   conn: $('conn'), mode: $('mode'), legend: $('legend'),
 };
 
@@ -140,6 +141,44 @@ function visibleAgents() {
   const p = currentProject();
   return [...agents.values()].filter((a) => (p === '__all' || a.project === p) && isVisible(a));
 }
+
+// Active (or waiting-for-user) sessions in projects other than the selected one.
+function otherActive() {
+  const p = ui.project.value;
+  if (p === '__auto' || p === '__all') return null;
+  const projects = new Map(); // project -> { name, roots:Set }
+  for (const a of agents.values()) {
+    if (a.project === p || now() - a.lastAt > RECENT_MS) continue;
+    const st = stateOf(a);
+    if (st === 'done' || st === 'idle' || (st === 'waiting' && !a.isMain)) continue;
+    const e = projects.get(a.project) || { key: a.project, name: a.projectName, roots: new Set() };
+    e.roots.add(a.isMain ? a.key : a.parent || a.key);
+    projects.set(a.project, e);
+  }
+  if (!projects.size) return null;
+  const list = [...projects.values()];
+  return { n: list.reduce((s, e) => s + e.roots.size, 0), names: list.map((e) => e.name), target: list.length === 1 ? list[0].key : '__auto' };
+}
+function otherActiveHtml(o) {
+  const names = o.names.slice(0, 3).map(esc).join(', ') + (o.names.length > 3 ? '…' : '');
+  return `⚡ ${o.n} active session${o.n === 1 ? '' : 's'} in ${o.names.length === 1 ? names : `other projects: ${names}`} <button type="button" data-switch="${esc(o.target)}">Show</button>`;
+}
+function switchProject(v) {
+  ui.project.value = v;
+  if (ui.project.value !== v) ui.project.value = '__auto';
+  savePrefs(); renderPanel();
+}
+let noticeHtml = '', emptyHtml = '';
+function renderNotice(o, el, cacheKey, html) {
+  const next = o ? html : '';
+  if (cacheKey === next) return next;
+  el.innerHTML = next; el.hidden = !next;
+  return next;
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest && ev.target.closest('button[data-switch]');
+  if (b) switchProject(b.dataset.switch);
+});
 
 // ---------- sprites & movement ----------
 function spotIn(z) {
@@ -577,6 +616,11 @@ function frame(t) {
   }
 
   ui.empty.hidden = vis.length > 0;
+  if (!ui.empty.hidden) {
+    const o = otherActive();
+    emptyHtml = renderNotice(o, ui.emptyOther, emptyHtml, o && otherActiveHtml(o));
+    ui.emptyMsg.hidden = !!o;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -641,6 +685,8 @@ function renderProjects() {
 }
 
 function renderPanel() {
+  const o = otherActive();
+  noticeHtml = renderNotice(o, ui.otherActive, noticeHtml, o && otherActiveHtml(o));
   const vis = visibleAgents();
   const states = vis.map(stateOf);
   const working = states.filter((s) => !['idle', 'done', 'waiting'].includes(s)).length;
