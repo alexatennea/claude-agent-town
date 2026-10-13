@@ -86,3 +86,7 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid var(-
   #stage { height: 60vh; flex: none; }
   #panel { width: 100%; border-left: 0; border-top: 1px solid var(--line); }
 }
+
+.notice { margin-top: 10px; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--warn); border-radius: 8px; font-size: 12px; color: var(--text); }
+.notice button { margin-left: 6px; background: var(--accent); color: #1b1d26; border: 0; border-radius: 99px; font-weight: 700; font-size: 11px; padding: 2px 9px; cursor: pointer; }
+#emptyOther { pointer-events: auto; border-color: var(--line); }
