@@ -46,12 +46,13 @@ The server binds to `127.0.0.1` only, since transcripts contain your prompts and
 
 `/dashboard` (or **Dashboard →** in the town's panel) shows the same live data as a table view:
 
-- **Sessions**: what each session is doing, with the ones waiting for you first. Click a row for the prompt, sub-agents and recent activity.
-- **Environments**: each folder Claude Code is working in, with its git branch, uncommitted changes and unpushed commits.
+- **Needs your attention**: sessions waiting on you, reviews you owe, PR nudges, stories whose board column doesn't match the work, and stale branches with local changes.
+- **Run rate**: points done vs the rate still required per working day, with a cricket-style worm chart.
 - **Sprint**: your backlog items in a team's current iteration (set `AZURE_DEVOPS_PROJECT` and `AZURE_DEVOPS_TEAM`), grouped by board column.
-- **My pull requests**.
+- **Pull requests**: yours, and the ones waiting on your review.
+- **Team delivery**: the whole team's sprint by stage, blocked items, and a per-member breakdown.
 
-Work item ids in branch names and PR titles (e.g. `story/76812-…`) link sessions, workspaces and PRs to their sprint story.
+Work item ids in branch names and PR titles (e.g. `story/76812-…`) link sessions, repos and PRs to their sprint story; the server also reads each Claude Code workspace's git state to spot board drift and stale branches.
 
 ## How it works
 

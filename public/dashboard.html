@@ -33,27 +33,23 @@
       <div id="attention"></div>
     </section>
 
-    <section class="card wide" id="prsCard" hidden>
-      <div class="card-head"><h2>Pull requests</h2></div>
-      <div class="pr-cols">
-        <div><h3>Mine <span id="prsMineCount" class="count"></span></h3><ul id="prs" class="prs"></ul></div>
-        <div><h3>To review <span id="reviewsCount" class="count"></span></h3><ul id="reviews" class="prs"></ul></div>
-      </div>
-    </section>
+    <div class="split wide">
+      <section class="card" id="runRateCard" hidden>
+        <div class="card-head"><h2 id="runRateTitle">Run rate</h2><span class="muted">team, working days</span></div>
+        <div id="runRate"></div>
+      </section>
+      <section class="card" id="prsCard" hidden>
+        <div class="card-head"><h2>Pull requests</h2></div>
+        <div class="pr-cols">
+          <div><h3>Mine <span id="prsMineCount" class="count"></span></h3><ul id="prs" class="prs"></ul></div>
+          <div><h3>To review <span id="reviewsCount" class="count"></span></h3><ul id="reviews" class="prs"></ul></div>
+        </div>
+      </section>
+    </div>
 
     <section class="card wide" id="teamCard" hidden>
       <div class="card-head"><h2 id="teamTitle">Team delivery</h2><a id="teamBoardLink" target="_blank" rel="noopener" class="muted">Open board ↗</a></div>
       <div id="team"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2>Sessions</h2><label class="muted"><input type="checkbox" id="showIdle"> Show idle</label></div>
-      <div id="sessions"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2>Environments</h2><span class="muted">Claude Code workspaces</span></div>
-      <div id="workspaces"></div>
     </section>
   </main>
   <script src="/dashboard.js" type="module"></script>

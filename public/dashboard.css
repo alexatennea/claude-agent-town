@@ -50,6 +50,36 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
 #prsCard h3 { margin: 0 0 4px; }
 .my-vote { display: block; font-size: 12px; padding: 0 6px 6px; margin-top: -4px; }
 
+/* run rate */
+.split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; align-items: stretch; }
+.scoreboard { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.score b { font-size: 34px; font-variant-numeric: tabular-nums; display: block; line-height: 1.1; }
+.score b span { font-size: 20px; color: var(--muted); font-weight: 600; }
+.rates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.rate { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
+.rate b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.rate span { font-size: 11px; }
+.rate.behind b { color: #e05d5d; }
+.commentary { margin: 10px 0 0; line-height: 1.5; }
+.worm { margin: 12px 0 0; }
+.worm svg { width: 100%; height: auto; display: block; }
+.worm .g { stroke: var(--line); stroke-width: 1; }
+.worm .ax { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.worm .ax.future { opacity: .55; }
+.worm .today { fill: var(--panel-2); }
+.worm path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.worm .act { stroke: var(--accent); stroke-width: 2.5; }
+.worm .par { stroke: var(--muted); stroke-dasharray: 2 4; }
+.worm .req { stroke: #e05d5d; stroke-dasharray: 6 4; }
+.worm .proj { stroke: var(--accent); stroke-dasharray: 1 5; opacity: .8; }
+.worm .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.worm figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.worm .key { display: inline-block; width: 16px; height: 0; border-top: 2px solid; margin-right: -6px; vertical-align: middle; }
+.worm .key.act { border-color: var(--accent); }
+.worm .key.par { border-color: var(--muted); border-top-style: dotted; }
+.worm .key.req { border-color: #e05d5d; border-top-style: dashed; }
+.worm .key.proj { border-color: var(--accent); border-top-style: dotted; opacity: .8; }
+
 /* attention */
 .refresh { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .refresh select { padding: 3px 6px; font-size: 12px; margin-left: 4px; }
@@ -74,31 +104,7 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
 .attention .snooze:hover { color: var(--text); border-color: var(--muted); }
 @media (hover: none) { .attention .snooze { opacity: 1; } }
 
-/* sessions */
 .table-wrap { overflow-x: auto; }
-table.sessions { width: 100%; border-collapse: collapse; }
-.sessions th { text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.sessions td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.sessions tr[data-key] { cursor: pointer; }
-.sessions tr[data-key]:hover td { background: var(--panel-2); }
-.sessions tr.s-waiting td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
-.sessions tr.s-idle td { color: var(--muted); }
-.sessions td.title { width: 45%; max-width: 0; }
-.sessions .title .t, .sessions .title .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sessions .title .sub { margin-top: 2px; font-size: 12px; color: var(--muted); }
-.sessions .title .branch { margin-left: 6px; }
-.sessions .ws { margin-right: 6px; }
-.sessions .what { color: var(--muted); max-width: 0; width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.sessions tr.detail td { background: var(--panel-2); padding: 10px 12px 12px; cursor: default; }
-.detail .task { white-space: pre-wrap; max-height: 110px; overflow: auto; margin-bottom: 8px; }
-.detail .kv { display: grid; grid-template-columns: 80px 1fr 80px 1fr; gap: 3px 8px; color: var(--muted); font-size: 12px; }
-.detail .kv span:nth-child(even) { color: var(--text); overflow-wrap: anywhere; }
-.detail .kids { margin-top: 8px; }
-.detail .log { list-style: none; padding: 0; margin: 8px 0 0; font-size: 12px; }
-.detail .log li { display: grid; grid-template-columns: 48px 1fr; gap: 6px; padding: 2px 0; }
-.detail .log time { color: var(--muted); }
-.detail .log span { overflow-wrap: anywhere; }
 
 /* sprint */
 .sprint-dates { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
@@ -157,22 +163,12 @@ table.members { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .members tr.detail td { background: var(--panel-2); padding: 10px 12px; }
 .avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--line); font-size: 10px; font-weight: 700; margin-right: 8px; color: var(--text); }
 
-/* workspaces */
-.workspaces { list-style: none; margin: 0; padding: 0; }
-.workspaces li { padding: 9px 0; border-top: 1px solid var(--line); }
-.workspaces li:first-child { border-top: 0; padding-top: 2px; }
-.ws-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.ws-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-agents { display: flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: 12px; }
-.ws-git { margin-top: 3px; }
-.ws-commit { font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 @media (max-width: 1000px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
   .pr-cols { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .buckets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .members .bar-cell { display: none; }
   .grid { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .topbar { padding: 10px 16px; gap: 10px; flex-wrap: wrap; }
   #updated { display: none; }
-  .sessions .what, .sessions th:nth-child(3) { display: none; }
 }

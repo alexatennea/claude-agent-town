@@ -12,29 +12,16 @@ const VOTES = { 10: '✅ you approved', 5: '✅ you approved with suggestions', 
 const $ = (id) => document.getElementById(id);
 let data = null;
 let clockOffset = 0;
-const open = new Set(); // expanded session keys
 const openMembers = new Set(); // expanded team member rows
 const now = () => Date.now() + clockOffset;
 const stateOf = (a) => stateAt(a, now());
 const relTime = (ts) => relTimeAt(ts, now());
 
-$('showIdle').checked = (() => { try { return localStorage.getItem('dash-show-idle') === '1'; } catch { return false; } })();
-$('showIdle').addEventListener('change', () => {
-  try { localStorage.setItem('dash-show-idle', $('showIdle').checked ? '1' : '0'); } catch { /* storage unavailable */ }
-  render();
-});
 $('team').addEventListener('click', (ev) => {
   const row = ev.target.closest('[data-member]');
   if (!row || ev.target.closest('a')) return;
   const k = row.dataset.member;
   openMembers.has(k) ? openMembers.delete(k) : openMembers.add(k);
-  render();
-});
-$('sessions').addEventListener('click', (ev) => {
-  const row = ev.target.closest('[data-key]');
-  if (!row) return;
-  const k = row.dataset.key;
-  open.has(k) ? open.delete(k) : open.add(k);
   render();
 });
 
@@ -76,10 +63,9 @@ function render() {
   renderAttention(attention);
   alertOnNew(attention);
   renderStats(ss, ado, sprint);
-  renderSessions(ss, linkedIds);
   renderSprint(sprint, ss, ado);
   renderTeam(sprint);
-  renderWorkspaces(ss, linkedIds);
+  renderRunRate(sprint);
   $('prsCard').hidden = !ado;
   if (ado) {
     $('prs').innerHTML = prListHtml(ado, now(), (pr) => storyChips(linkedIds(pr.title, pr.source), sprint));
@@ -112,44 +98,6 @@ function renderStats(ss, ado, sprint) {
 }
 
 const STATUS = { waiting: ['☕', 'Waiting for you'], working: ['⚙️', 'Working'], idle: ['💤', 'Idle'] };
-
-function renderSessions(ss, linkedIds) {
-  const show = $('showIdle').checked ? ss : ss.filter((s) => s.status !== 'idle' || now() - s.lastAt < RECENT_MS);
-  const hidden = ss.length - show.length;
-  if (!show.length) {
-    $('sessions').innerHTML = `<p class="empty">No active sessions${hidden ? ` (${hidden} idle hidden)` : ''}.</p>`;
-    return;
-  }
-  const rows = show.map((s) => {
-    const m = s.main;
-    const what = s.status === 'waiting' ? `Waiting for you · ${ago(s.lastAt)}`
-      : s.busy ? `${ACTS[stateOf(s.busy)].emoji} ${ACTS[stateOf(s.busy)].label}${s.busy.detail ? `: ${s.busy.detail}` : ''}${s.busy !== m ? ` (${displayName(s.busy)})` : ''}`
-      : m.done ? 'Finished' : 'Idle';
-    const ids = linkedIds(m.branch);
-    const row = `<tr data-key="${esc(m.key)}" class="s-${s.status}${open.has(m.key) ? ' open' : ''}">
-      <td><span class="chip ${s.status}">${STATUS[s.status][0]} ${STATUS[s.status][1]}</span></td>
-      <td class="title"><div class="t" title="${esc(displayName(m))}">${esc(displayName(m))}</div>
-        <div class="sub"><span class="ws">${esc(m.projectName)}</span>${m.branch ? `<span class="branch" title="${esc(m.branch)}">${esc(m.branch)}</span>` : ''}${storyChips(ids, data.prs?.sprint)}</div></td>
-      <td class="what" title="${esc(what)}">${esc(what)}</td>
-      <td class="num">${s.kids.length ? `${s.activeKids.length}/${s.kids.length}` : '–'}</td>
-      <td class="num">${relTime(s.lastAt)}</td>
-    </tr>`;
-    if (!open.has(m.key)) return row;
-    const events = [...m.events].slice(-8).reverse();
-    return row + `<tr class="detail"><td colspan="5">
-      ${m.task ? `<div class="task">${esc(m.task)}</div>` : ''}
-      <div class="kv"><span>Workspace</span><span>${esc(m.project)}</span><span>Model</span><span>${esc(m.model || '?')}</span>
-        <span>Started</span><span>${relTime(m.startedAt)}</span><span>Tool calls</span><span>${m.toolCalls}</span>
-        <span>Branch</span><span>${esc(m.branch || '–')}</span><span>Context</span><span>${fmtK(m.contextTokens)} tokens</span></div>
-      ${s.kids.length ? `<div class="kids">${s.kids.sort((a, b) => b.lastAt - a.lastAt).map((k) => `<span class="chip ${['idle', 'done'].includes(stateOf(k)) ? 'idle' : 'working'}">${ACTS[stateOf(k)].emoji} ${esc(trunc(displayName(k), 40))}</span>`).join('')}</div>` : ''}
-      ${events.length ? `<ul class="log">${events.map((e) => `<li><time>${new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><span>${esc(e.text)}</span></li>`).join('')}</ul>` : ''}
-    </td></tr>`;
-  });
-  $('sessions').innerHTML = `<div class="table-wrap"><table class="sessions">
-    <thead><tr><th>Status</th><th>Session</th><th>Doing</th><th class="num" title="active / total sub-agents">Subs</th><th class="num">Active</th></tr></thead>
-    <tbody>${rows.join('')}</tbody></table></div>
-    ${hidden ? `<p class="muted foot">${hidden} idle session${hidden > 1 ? 's' : ''} hidden</p>` : ''}`;
-}
 
 function storyChips(ids, sprint) {
   if (!ids.length) return '';
@@ -204,6 +152,104 @@ const stackBar = (items) => `<div class="stack-bar">${BUCKETS.map(([b, label]) =
   const n = items.filter((i) => i.bucket === b).length;
   return n ? `<i class="b-${b}" style="flex:${n}" title="${label}: ${n}"></i>` : '';
 }).join('')}</div>`;
+
+// ---------- run rate (cricket-style: current vs required scoring per working day) ----------
+// Sprint dates are calendar days (midnight UTC); count Mon–Fri between them, both ends inclusive.
+function workingDays(fromMs, toMs) {
+  let n = 0;
+  for (let d = new Date(fromMs); d.getTime() <= toMs; d.setUTCDate(d.getUTCDate() + 1)) {
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) n++;
+  }
+  return n;
+}
+const today = () => { const d = new Date(now()); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); };
+const rate = (n) => (n >= 10 ? n.toFixed(0) : n.toFixed(1));
+
+function renderRunRate(sprint) {
+  const team = sprint?.team;
+  $('runRateCard').hidden = !team?.length || !sprint.start;
+  if ($('runRateCard').hidden) return;
+  $('runRateTitle').textContent = `Run rate${sprint.name ? ` · ${sprint.name}` : ''}`;
+  const total = working(sprint.start, sprint.end);
+  const t = today();
+  const played = Math.min(total, Math.max(1, working(sprint.start, Math.min(t, sprint.end)))); // today counts as in play
+  const left = t < sprint.start ? total : working(t + 86_400_000, sprint.end);
+
+  const score = (unit) => {
+    const target = unit === 'pts' ? sumPts(team) : team.length;
+    const done = unit === 'pts' ? sumPts(team.filter(isDone)) : team.filter(isDone).length;
+    const crr = done / played;
+    const need = target - done;
+    const rrr = left ? need / left : need > 0 ? Infinity : 0;
+    return { target, done, crr, need, rrr, projected: Math.round(done + crr * left) };
+  };
+  const pts = score('pts'), items = score('items');
+  const verdict = pts.need <= 0 ? ['ok', 'Target reached']
+    : !left ? ['bad', 'Out of days']
+    : pts.rrr <= pts.crr ? ['ok', 'Ahead of the rate']
+    : pts.rrr <= pts.crr * 1.5 ? ['warn', 'Gettable']
+    : ['bad', 'Behind the rate'];
+  const unpointed = team.filter((i) => i.points == null && !isDone(i)).length;
+
+  $('runRate').innerHTML = `
+    <div class="scoreboard">
+      <div class="score"><b>${pts.done}<span>/${pts.target}</span></b><span class="muted">points · day ${played} of ${total}</span></div>
+      <span class="pace ${verdict[0]}">${verdict[1]}</span>
+    </div>
+    <div class="rates">
+      <div class="rate"><span class="muted">Current run rate</span><b>${rate(pts.crr)}</b><span class="muted">pts / day</span></div>
+      <div class="rate ${pts.rrr > pts.crr ? 'behind' : ''}"><span class="muted">Required run rate</span><b>${Number.isFinite(pts.rrr) ? rate(pts.rrr) : '–'}</b><span class="muted">pts / day</span></div>
+      <div class="rate"><span class="muted">Projected</span><b>${pts.projected}</b><span class="muted">pts by ${new Date(sprint.end).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}</span></div>
+    </div>
+    ${worm(sprint, team, pts, played, total)}
+    <p class="commentary">${pts.need > 0
+      ? `Needs <b>${pts.need} pts</b> from ${left} working day${left === 1 ? '' : 's'}${left ? ` (${rate(pts.rrr)} a day)` : ''}, scoring ${rate(pts.crr)} a day so far.`
+      : 'Target reached. Anything else is extras.'}
+      By items: ${items.done}/${items.target} done${items.need > 0 && left ? `, need ${rate(items.rrr)} a day` : ''}.
+      ${unpointed ? `<span class="muted">${unpointed} open item${unpointed > 1 ? 's have' : ' has'} no points, so the points target is understated.</span>` : ''}</p>`;
+}
+const working = workingDays;
+
+// Cricket "worm": cumulative points by working day vs the par line, the rate still required, and a projection.
+function worm(sprint, team, pts, played, total) {
+  const W = 560, H = 200, L = 34, R = 10, T = 10, B = 24;
+  const days = [];
+  for (let d = new Date(sprint.start); d.getTime() <= sprint.end; d.setUTCDate(d.getUTCDate() + 1)) {
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) days.push(d.getTime());
+  }
+  const doneBy = (ms) => sumPts(team.filter((i) => isDone(i) && (i.doneAt ?? i.changedAt) < ms));
+  // x = k is the end of working day k; x = 0 is the start of the sprint.
+  const actual = [[0, doneBy(sprint.start)]];
+  for (let k = 1; k <= played; k++) actual.push([k, k === played ? pts.done : doneBy(days[k - 1] + 86_400_000)]);
+  const yMax = Math.max(pts.target, pts.projected, 1) * 1.08;
+  const x = (k) => L + (k / total) * (W - L - R);
+  const y = (v) => T + (1 - v / yMax) * (H - T - B);
+  const line = (p) => p.map(([k, v], i) => `${i ? 'L' : 'M'}${x(k).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const step = yMax > 40 ? 20 : yMax > 16 ? 10 : 5;
+  const grid = [];
+  for (let v = 0; v <= yMax; v += step) grid.push(`<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g"/><text x="${L - 6}" y="${y(v) + 3}" class="ax" text-anchor="end">${v}</text>`);
+  const labels = days.map((d, i) => {
+    const dt = new Date(d);
+    const txt = i === 0 || dt.getUTCDate() === 1 ? dt.toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' }) : dt.getUTCDate();
+    return `<text x="${(x(i) + x(i + 1)) / 2}" y="${H - 8}" class="ax${i < played ? '' : ' future'}" text-anchor="middle">${txt}</text>`;
+  }).join('');
+  const [px, pv] = actual[actual.length - 1];
+  const dots = actual.slice(1).map(([k, v]) => `<circle cx="${x(k)}" cy="${y(v)}" r="3" class="dot"><title>Day ${k} · ${new Date(days[k - 1]).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}: ${v} pts</title></circle>`).join('');
+  return `<figure class="worm">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Points done per working day against target">
+      ${grid.join('')}
+      <rect x="${x(played - 1)}" y="${T}" width="${x(played) - x(played - 1)}" height="${H - T - B}" class="today"><title>Today</title></rect>
+      <path d="${line([[0, 0], [total, pts.target]])}" class="par"/>
+      ${pts.need > 0 && played < total ? `<path d="${line([[px, pv], [total, pts.target]])}" class="req"/>` : ''}
+      ${played < total ? `<path d="${line([[px, pv], [total, pts.projected]])}" class="proj"/>` : ''}
+      <path d="${line(actual)}" class="act"/>
+      ${dots}
+      ${labels}
+    </svg>
+    <figcaption><span class="key act"></span>Done <span class="key par"></span>Par <span class="key req"></span>Required from here <span class="key proj"></span>Projected at current rate</figcaption>
+  </figure>`;
+}
 
 function renderTeam(sprint) {
   const team = sprint?.team;
@@ -263,37 +309,6 @@ const initials = (name) => name.split(/\s+/).map((w) => w[0]).filter(Boolean).sl
 const itemLine = (i, withWho = false) => `<li><span class="sw b-${i.bucket}" title="${esc(i.column)}"></span>
   <a href="${esc(i.url)}" target="_blank" rel="noopener"><span class="sid">#${i.id}</span> ${esc(i.title)}</a>
   <span class="muted">${esc(i.column)}${withWho ? ` · ${esc(i.assignee?.name ?? 'Unassigned')}` : ''}${i.points != null ? ` · ${i.points} pts` : ''}</span></li>`;
-
-function renderWorkspaces(ss, linkedIds) {
-  const entries = Object.entries(data.workspaces).map(([cwd, w]) => {
-    const mine = ss.filter((s) => s.main.project === cwd);
-    return { cwd, w, mine, lastAt: Math.max(0, ...mine.map((s) => s.lastAt)) };
-  }).sort((a, b) => b.lastAt - a.lastAt);
-  if (!entries.length) { $('workspaces').innerHTML = '<p class="empty">No workspaces yet.</p>'; return; }
-  $('workspaces').innerHTML = `<ul class="workspaces">${entries.map(({ cwd, w, mine, lastAt }) => {
-    const name = w.git ? w.repo : cwd.includes('/scratch-workspaces/') ? 'Scratch workspace' : cwd.split('/').pop();
-    const working = mine.filter((s) => s.status === 'working').length;
-    const waiting = mine.filter((s) => s.status === 'waiting').length;
-    const git = !w.exists ? '<span class="chip idle">folder gone</span>'
-      : !w.git ? '<span class="muted">not a git repo</span>'
-      : [
-        `<span class="branch">${esc(w.branch)}</span>`,
-        w.worktree ? '<span class="chip idle">worktree</span>' : '',
-        w.changed || w.untracked ? `<span class="chip dirty" title="${w.changed} changed, ${w.untracked} untracked">✎ ${w.changed + w.untracked}</span>` : '<span class="chip clean">clean</span>',
-        w.ahead ? `<span class="chip" title="commits not pushed">↑${w.ahead}</span>` : '',
-        w.behind ? `<span class="chip" title="commits to pull">↓${w.behind}</span>` : '',
-        w.ahead == null ? '<span class="chip idle" title="branch has no upstream">no upstream</span>' : '',
-        storyChips(linkedIds(w.branch), data.prs?.sprint),
-      ].join('');
-    return `<li>
-      <div class="ws-head"><b title="${esc(cwd)}">${esc(name)}</b>
-        <span class="ws-agents">${waiting ? `<span class="chip waiting">☕ ${waiting}</span>` : ''}${working ? `<span class="chip working">⚙️ ${working}</span>` : ''}
-        <span class="muted">${mine.length} session${mine.length === 1 ? '' : 's'}${lastAt ? ` · ${relTime(lastAt)}` : ''}</span></span></div>
-      <div class="ws-git">${git}</div>
-      ${w.lastCommit ? `<div class="muted ws-commit" title="${esc(w.lastCommit.message)}">${esc(trunc(w.lastCommit.message, 70))} · ${relTime(w.lastCommit.at)}</div>` : ''}
-    </li>`;
-  }).join('')}</ul>`;
-}
 
 // ---------- needs your attention ----------
 const DAY = 86_400_000;
