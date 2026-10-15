@@ -46,8 +46,8 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
 .story-chip { font-size: 11px; color: var(--accent); text-decoration: none; margin-left: 6px; }
 .branch { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-right: 6px; overflow-wrap: anywhere; }
 
-#prsCard h3 { margin: 6px 0 4px; }
-#prsCard h3 + .prs { margin-bottom: 8px; }
+.pr-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+#prsCard h3 { margin: 0 0 4px; }
 .my-vote { display: block; font-size: 12px; padding: 0 6px 6px; margin-top: -4px; }
 
 /* attention */
@@ -163,6 +163,7 @@ table.members { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .ws-commit { font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1000px) {
+  .pr-cols { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .buckets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .members .bar-cell { display: none; }
   .grid { grid-template-columns: minmax(0, 1fr); padding: 16px; }
