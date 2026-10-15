@@ -1,9 +1,7 @@
 // Dashboard: the same live feed as the town, laid out as sessions, sprint stories,
 // workspaces and pull requests, cross-linked by work item id.
-import { ACTS, esc, trunc, fmtK, displayName, stateOf as stateAt, relTime as relTimeAt, prListHtml } from './common.js';
+import { ACTS, RECENT_MS, esc, trunc, fmtK, displayName, stateOf as stateAt, relTime as relTimeAt, prListHtml } from './common.js';
 
-const RECENT_MS = 30 * 60_000; // idle sessions quieter than this are hidden unless "Show idle"
-const WAIT_MS = 4 * 3600_000; // a session waiting on you longer than this was most likely left, not paused
 const BUCKETS = [ // delivery stages, in board order; the server assigns each item one
   ['awaiting', 'Awaiting', 'Awaiting'], ['blocked', 'Blocked / on hold', 'Blocked'], ['progress', 'In progress', 'Doing'],
   ['test', 'In test', 'Test'], ['done', 'Done', 'Done'],
@@ -54,7 +52,8 @@ function sessions() {
     const st = stateOf(g.main);
     const activeKids = g.kids.filter((k) => !['idle', 'done'].includes(stateOf(k)));
     const lastAt = Math.max(g.main.lastAt, ...g.kids.map((k) => k.lastAt));
-    const status = st === 'waiting' ? (now() - lastAt < WAIT_MS ? 'waiting' : 'idle')
+    // Same rule as the town: once a session has been quiet long enough to leave town, it's parked, not waiting.
+    const status = st === 'waiting' ? (now() - lastAt < RECENT_MS ? 'waiting' : 'idle')
       : !['idle', 'done'].includes(st) || activeKids.length ? 'working'
       : 'idle';
     // When the main agent is idle but sub-agents are busy, show what they're doing.
@@ -293,6 +292,7 @@ function renderWorkspaces(ss, linkedIds) {
 
 // ---------- needs your attention ----------
 const DAY = 86_400_000;
+const STALE_BRANCH_MS = 3 * DAY;
 const ago = (ts) => relTime(ts).replace(' ago', '');
 const SNOOZE_KEY = 'dash-snoozed';
 let snoozed = (() => { try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) || '{}'); } catch { return {}; } })();
@@ -349,17 +349,17 @@ function attentionItems(ss, ado, sprint) {
       html: `${link(st.url, `#${st.id} ${trunc(st.title, 60)}`)} is <b>${esc(st.column)}</b> on the board, but has ${evidence.join(', ')}. Move it?` });
   }
 
-  // Forgotten work: local changes nobody has touched for a day.
+  // Forgotten work: uncommitted or unpushed changes on a feature branch nobody has touched for a few days.
   for (const [cwd, w] of Object.entries(data.workspaces)) {
-    if (!w.git) continue;
+    if (!w.git || /^(main|master|develop|trunk|\(detached\))$/.test(w.branch)) continue;
     const touched = Math.max(w.lastCommit?.at ?? 0, ...ss.filter((x) => x.main.project === cwd).map((x) => x.lastAt));
-    if (now() - touched < DAY) continue;
+    if (now() - touched < STALE_BRANCH_MS) continue;
     const bits = [];
     if (w.changed + w.untracked) bits.push(`${w.changed + w.untracked} uncommitted change${w.changed + w.untracked > 1 ? 's' : ''}`);
     if (w.ahead) bits.push(`${w.ahead} unpushed commit${w.ahead > 1 ? 's' : ''}`);
-    if (w.ahead == null && !/^(main|master|develop)$/.test(w.branch)) bits.push('a branch that was never pushed');
+    if (w.ahead == null) bits.push('no remote branch');
     if (!bits.length) continue;
-    items.push({ key: `stale:${cwd}:${touched}`, kind: 'stale', icon: '🧳', weight: 5,
+    items.push({ key: `stale:${cwd}:${w.branch}:${touched}`, kind: 'stale', icon: '🧳', weight: 5,
       html: `<b>${esc(w.repo)}</b> <span class="branch">${esc(w.branch)}</span> has ${bits.join(' and ')}, untouched for ${ago(touched)}` });
   }
   return items.sort((a, b) => a.weight - b.weight);

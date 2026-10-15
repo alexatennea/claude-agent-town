@@ -17,6 +17,9 @@ export const ACTS = {
   idle: { zone: 'lounge', emoji: '💤', label: 'Idle', fx: ['z'] },
 };
 
+// Sessions quieter than this leave the town (unless "show old") and stop counting as waiting for you.
+export const RECENT_MS = 30 * 60_000;
+
 export const STALE_MS = 3 * 60_000; // no writes for this long and not finished → idle
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

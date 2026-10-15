@@ -1,6 +1,6 @@
 // Claude Agent Town: a little pixel town where each Claude Code agent walks to the building
 // that matches what it's doing right now.
-import { ACTS, esc, trunc, fmtK, displayName, stateOf as stateAt, relTime as relTimeAt, prListHtml } from './common.js';
+import { ACTS, RECENT_MS, esc, trunc, fmtK, displayName, stateOf as stateAt, relTime as relTimeAt, prListHtml } from './common.js';
 import { buildScenery, drawSceneryAnim, drawSky, PAD_X, PAD_Y } from './scenery.js';
 
 const W = 1600, H = 900;
@@ -30,7 +30,6 @@ for (const z of ZONES) {
 const ZONE = Object.fromEntries(ZONES.map((z) => [z.key, z]));
 
 
-const RECENT_MS = 30 * 60_000; // hide sessions quieter than this unless "show old"
 const DONE_VISIBLE_MS = 10 * 60_000; // finished sub-agents hang around the lounge this long
 
 // ---------- state ----------
