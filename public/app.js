@@ -1,5 +1,6 @@
 // Claude Agent Town: a little pixel town where each Claude Code agent walks to the building
 // that matches what it's doing right now.
+import { ACTS, esc, trunc, fmtK, displayName, stateOf as stateAt, relTime as relTimeAt, prListHtml } from './common.js';
 import { buildScenery, drawSceneryAnim, drawSky, PAD_X, PAD_Y } from './scenery.js';
 
 const W = 1600, H = 900;
@@ -28,24 +29,7 @@ for (const z of ZONES) {
 }
 const ZONE = Object.fromEntries(ZONES.map((z) => [z.key, z]));
 
-const ACTS = {
-  reading: { zone: 'library', emoji: '📖', label: 'Reading', fx: ['📄', '📖', '🔍'] },
-  editing: { zone: 'workshop', emoji: '🔨', label: 'Editing', fx: ['✨', '🔧', '📝'] },
-  running: { zone: 'terminal', emoji: '⚙️', label: 'Running', fx: ['⚙️', '▶️', '💾'] },
-  tooling: { zone: 'terminal', emoji: '🔌', label: 'Using a tool', fx: ['🔌', '⚡'] },
-  testing: { zone: 'lab', emoji: '🧪', label: 'Testing', fx: ['✅', '🧪', '✅', '❌'] },
-  git: { zone: 'post', emoji: '📮', label: 'Git', fx: ['✉️', '📦'] },
-  searching: { zone: 'observatory', emoji: '🔭', label: 'On the web', fx: ['🌐', '⭐', '🔎'] },
-  thinking: { zone: 'garden', emoji: '💭', label: 'Thinking', fx: ['💡', '💭', '🤔'] },
-  talking: { zone: 'hall', emoji: '💬', label: 'Talking', fx: ['💬'] },
-  listening: { zone: 'hall', emoji: '👂', label: 'Getting instructions', fx: ['📋'] },
-  spawning: { zone: 'portal', emoji: '✨', label: 'Spawning a sub-agent', fx: ['✨', '🌟'] },
-  waiting: { zone: 'lounge', emoji: '☕', label: 'Waiting for you', fx: ['☕'] },
-  done: { zone: 'lounge', emoji: '💤', label: 'Finished', fx: ['z'] },
-  idle: { zone: 'lounge', emoji: '💤', label: 'Idle', fx: ['z'] },
-};
 
-const STALE_MS = 3 * 60_000; // no writes for this long and not finished → idle
 const RECENT_MS = 30 * 60_000; // hide sessions quieter than this unless "show old"
 const DONE_VISIBLE_MS = 10 * 60_000; // finished sub-agents hang around the lounge this long
 
@@ -54,7 +38,7 @@ const canvas = document.getElementById('town');
 const ctx = canvas.getContext('2d');
 const $ = (id) => document.getElementById(id);
 const ui = {
-  project: $('project'), agents: $('agents'), details: $('details'), stats: $('stats'),
+  project: $('project'), agents: $('agents'), prs: $('prs'), prsSection: $('prsSection'), prsCount: $('prsCount'), details: $('details'), stats: $('stats'),
   showOld: $('showOld'), allBubbles: $('allBubbles'), tooltip: $('tooltip'), empty: $('empty'),
   conn: $('conn'), mode: $('mode'), legend: $('legend'),
 };
@@ -82,6 +66,8 @@ function savePrefs() {
 }
 
 const now = () => Date.now() + clockOffset;
+const stateOf = (a) => stateAt(a, now());
+const relTime = (ts) => relTimeAt(ts, now());
 
 // ---------- helpers ----------
 function hash(str) {
@@ -90,32 +76,13 @@ function hash(str) {
   return h >>> 0;
 }
 const rand = (a, b) => a + Math.random() * (b - a);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const trunc = (s, n) => (s = String(s || ''), s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-function displayName(a) {
-  if (a.isMain) return a.title || a.task || a.projectName || 'Claude';
-  return a.title || a.agentType || 'sub-agent';
-}
 function shortName(a) {
   if (a.isMain) return trunc(a.title || a.projectName, 18);
   return trunc(a.title || a.agentType, 18);
 }
 
-function stateOf(a) {
-  if (a.done) return 'done';
-  if (a.waitingForUser) return 'waiting';
-  if (now() - a.lastAt > STALE_MS) return 'idle';
-  return ACTS[a.activity] ? a.activity : 'thinking';
-}
 
-function relTime(ts) {
-  const s = Math.max(0, Math.round((now() - ts) / 1000));
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  return `${Math.round(s / 3600)}h ago`;
-}
-const fmtK = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
 
 function isVisible(a) {
   if (ui.showOld.checked) return true;
@@ -700,6 +667,13 @@ function renderPanel() {
 
 ui.legend.innerHTML = Object.entries(ACTS).map(([, v]) => `<li>${v.emoji} ${esc(v.label)} → ${esc(ZONE[v.zone].name)}</li>`).join('');
 
+function renderPrs(state) {
+  ui.prsSection.hidden = !state;
+  if (!state) return;
+  ui.prsCount.textContent = state.prs.length ? state.prs.length : '';
+  ui.prs.innerHTML = prListHtml(state, now());
+}
+
 // ---------- live data ----------
 function connect() {
   const es = new EventSource('/events');
@@ -717,8 +691,11 @@ function connect() {
       firstSnapshot = false;
     }
     renderPanel();
+    const prsJson = JSON.stringify(data.prs);
+    if (prsJson !== lastPrsJson) { lastPrsJson = prsJson; renderPrs(data.prs); }
   };
 }
+let lastPrsJson;
 
 drawBackground(bg.getContext('2d'));
 const scenery = buildScenery(W, H, ROAD);

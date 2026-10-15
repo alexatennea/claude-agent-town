@@ -22,7 +22,7 @@
   <aside id="panel">
     <header>
       <h1>🏘️ Agent Town <span id="conn" class="dot" title="connecting"></span></h1>
-      <span id="mode" class="badge" hidden>DEMO</span>
+      <span class="head-right"><span id="mode" class="badge" hidden>DEMO</span><a href="/dashboard" class="navlink">Dashboard →</a></span>
     </header>
     <label class="field">Project
       <select id="project"></select>
@@ -35,6 +35,10 @@
     <h3>Agents</h3>
     <ul id="agents" class="agents"></ul>
     <section id="details" hidden></section>
+    <section id="prsSection" hidden>
+      <h3>My pull requests <span id="prsCount" class="count"></span></h3>
+      <ul id="prs" class="prs"></ul>
+    </section>
     <details class="legend">
       <summary>Legend</summary>
       <ul id="legend"></ul>

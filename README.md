@@ -36,8 +36,22 @@ Options:
 - `--hours <n>`: only load sessions touched in the last *n* hours (default 12)
 - `--demo`: write fake transcripts to a temp folder and watch those instead
 - `--open`: open the browser
+- `--ado-org <org>`: list your open Azure DevOps pull requests in the side panel (or `AZURE_DEVOPS_ORG`). Auth uses `AZURE_DEVOPS_PAT` (Code: Read) if set, otherwise an `az` CLI token; pass `--ado-tenant` (or `AZURE_DEVOPS_TENANT`) if the org lives in a different tenant from your default `az` login. Refreshes every minute.
+
+Any of these environment variables can go in a `.env` file next to `server.js` instead (it's gitignored): `cp .env.example .env` and fill it in.
 
 The server binds to `127.0.0.1` only, since transcripts contain your prompts and code.
+
+## Dashboard
+
+`/dashboard` (or **Dashboard →** in the town's panel) shows the same live data as a table view:
+
+- **Sessions**: what each session is doing, with the ones waiting for you first. Click a row for the prompt, sub-agents and recent activity.
+- **Environments**: each folder Claude Code is working in, with its git branch, uncommitted changes and unpushed commits.
+- **Sprint**: your backlog items in a team's current iteration (set `AZURE_DEVOPS_PROJECT` and `AZURE_DEVOPS_TEAM`), grouped by board column.
+- **My pull requests**.
+
+Work item ids in branch names and PR titles (e.g. `story/76812-…`) link sessions, workspaces and PRs to their sprint story.
 
 ## How it works
 

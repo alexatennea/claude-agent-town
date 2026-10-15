@@ -8,6 +8,15 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { ClaudeWatcher } from './lib/watcher.js';
 import { startDemo } from './lib/demo.js';
+import { AzDoPrs } from './lib/azdo.js';
+import { Workspaces } from './lib/workspaces.js';
+
+// Local settings (e.g. AZURE_DEVOPS_PAT) live in a gitignored .env next to this file; real env vars win.
+const envFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '.env');
+if (fs.existsSync(envFile)) {
+  if (process.loadEnvFile) process.loadEnvFile(envFile);
+  else console.warn('   .env found but ignored: needs Node 20.12+');
+}
 
 const { values: opts } = parseArgs({
   options: {
@@ -16,6 +25,10 @@ const { values: opts } = parseArgs({
     hours: { type: 'string', default: '12' },
     demo: { type: 'boolean', default: false },
     open: { type: 'boolean', default: false },
+    'ado-org': { type: 'string', default: process.env.AZURE_DEVOPS_ORG },
+    'ado-tenant': { type: 'string', default: process.env.AZURE_DEVOPS_TENANT },
+    'ado-project': { type: 'string', default: process.env.AZURE_DEVOPS_PROJECT },
+    'ado-team': { type: 'string', default: process.env.AZURE_DEVOPS_TEAM },
     help: { type: 'boolean', short: 'h', default: false },
   },
 });
@@ -27,7 +40,11 @@ if (opts.help) {
   --dir <path>     Claude projects dir (default ~/.claude/projects)
   --hours <n>      load sessions active in the last n hours (default 12)
   --demo           simulate agents instead of reading real transcripts
-  --open           open the browser`);
+  --open           open the browser
+  --ado-org <org>  show your open Azure DevOps PRs from this org (or AZURE_DEVOPS_ORG)
+  --ado-tenant <t> tenant for the az CLI token (or AZURE_DEVOPS_TENANT); AZURE_DEVOPS_PAT skips az
+  --ado-project <p> --ado-team <t>
+                   also show your stories in that team's current sprint (or AZURE_DEVOPS_PROJECT / _TEAM)`);
   process.exit(0);
 }
 
@@ -39,9 +56,13 @@ if (opts.demo) {
 
 const watcher = new ClaudeWatcher({ projectsDir, sinceHours: Number(opts.hours) || 12 });
 
+const azdo = opts['ado-org'] ? new AzDoPrs({ org: opts['ado-org'], tenant: opts['ado-tenant'], project: opts['ado-project'], team: opts['ado-team'] }) : null;
+azdo?.start();
+const workspaces = new Workspaces({ cwds: () => watcher.snapshot().map((a) => a.project) });
+
 const clients = new Set();
 let pending = null;
-const payload = () => JSON.stringify({ now: Date.now(), demo: opts.demo, agents: watcher.snapshot() });
+const payload = () => JSON.stringify({ now: Date.now(), demo: opts.demo, agents: watcher.snapshot(), prs: azdo?.snapshot() ?? null, workspaces: workspaces.snapshot() });
 function broadcast() {
   if (pending) return;
   pending = setTimeout(() => {
@@ -52,6 +73,7 @@ function broadcast() {
 }
 watcher.on('change', broadcast);
 watcher.start();
+workspaces.start();
 setInterval(broadcast, 5000); // keeps "stale" detection honest even when nothing is writing
 
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
@@ -70,7 +92,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(payload());
   }
-  const file = path.join(publicDir, path.normalize(url.pathname === '/' ? '/index.html' : url.pathname));
+  const file = path.join(publicDir, path.normalize(url.pathname === '/' ? '/index.html' : url.pathname === '/dashboard' ? '/dashboard.html' : url.pathname));
   if (!file.startsWith(publicDir)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404); return res.end('not found'); }

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body class="dash">
+  <header class="topbar">
+    <h1>🏘️ Agent Town <span id="conn" class="dot" title="connecting"></span></h1>
+    <nav class="tabs"><a href="/">Town</a><a href="/dashboard" class="on">Dashboard</a></nav>
+    <span id="mode" class="badge" hidden>DEMO</span>
+  </header>
+
+  <main class="grid">
+    <section id="stats" class="kpis wide"></section>
+
+    <section class="card wide">
+      <div class="card-head"><h2>Sessions</h2><label class="muted"><input type="checkbox" id="showIdle"> Show idle</label></div>
+      <div id="sessions"></div>
+    </section>
+
+    <section class="card" id="sprintCard" hidden>
+      <div class="card-head"><h2 id="sprintTitle">Sprint</h2><a id="boardLink" target="_blank" rel="noopener" class="muted">Open board ↗</a></div>
+      <div id="sprint"></div>
+    </section>
+
+    <div class="stack">
+      <section class="card">
+        <div class="card-head"><h2>Environments</h2><span class="muted">Claude Code workspaces</span></div>
+        <div id="workspaces"></div>
+      </section>
+      <section class="card" id="prsCard" hidden>
+        <div class="card-head"><h2>My pull requests</h2></div>
+        <ul id="prs" class="prs"></ul>
+      </section>
+    </div>
+  </main>
+  <script src="/dashboard.js" type="module"></script>
+</body>
+</html>
