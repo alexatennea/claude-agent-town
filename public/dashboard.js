@@ -231,6 +231,7 @@ function renderTeam(sprint) {
     members.get(k).items.push(i);
   }
   const myIds = new Set(sprint.stories.map((s) => s.id));
+  const colIndex = (i) => (sprint.columns ?? []).indexOf(i.column);
   const rows = [...members.entries()].sort(([ka, a], [kb, b]) => (ka === '') - (kb === '') || b.items.length - a.items.length).map(([k, m]) => {
     const me = m.items.some((i) => myIds.has(i.id));
     const cells = BUCKETS.map(([b]) => { const n = m.items.filter((i) => i.bucket === b).length; return `<td class="cnt b-text-${b} ${n ? '' : 'zero'}">${n || '·'}</td>`; }).join('');
@@ -238,7 +239,9 @@ function renderTeam(sprint) {
       <td class="who"><span class="avatar">${esc(initials(m.name))}</span>${esc(m.name)}</td>
       <td class="bar-cell">${stackBar(m.items)}</td>${cells}<td class="cnt sum">${sumPts(m.items)}</td></tr>`;
     if (!openMembers.has(k)) return row;
-    return row + `<tr class="detail"><td colspan="${BUCKETS.length + 3}"><ul class="member-items">${m.items.map((i) => itemLine(i)).join('')}</ul></td></tr>`;
+    // Furthest along first: board columns right to left (Closed at the top); sort is stable, so priority order holds within a column.
+    const byColumn = [...m.items].sort((a, b) => colIndex(b) - colIndex(a));
+    return row + `<tr class="detail"><td colspan="${BUCKETS.length + 3}"><ul class="member-items">${byColumn.map((i) => itemLine(i)).join('')}</ul></td></tr>`;
   }).join('');
 
   $('team').innerHTML = `
