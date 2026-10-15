@@ -7,7 +7,18 @@ const BUCKETS = [ // delivery stages, in board order; the server assigns each it
   ['test', 'In test', 'Test'], ['done', 'Done', 'Done'],
 ];
 const isDone = (s) => s.bucket === 'done';
-const VOTES = { 10: '✅ you approved', 5: '✅ you approved with suggestions', [-5]: '⏳ you asked for changes', [-10]: '❌ you rejected', 0: '<b>needs your vote</b>' };
+const vote = (v, w) => ({
+  10: `✅ ${w.subject} approved`, 5: `✅ ${w.subject} approved with suggestions`, [-5]: `⏳ ${w.subject} asked for changes`,
+  [-10]: `❌ ${w.subject} rejected`, 0: `<b>needs ${w.poss} vote</b>`,
+})[v] ?? 'no vote yet';
+
+// Whose context the board cards show: me, unless someone else is picked in Focus.
+function who() {
+  const ado = data?.prs;
+  const isMe = !ado?.focus || ado.focus.id === ado.me;
+  const first = isMe ? '' : ado.focus.name.split(/\s+/)[0];
+  return { isMe, first, subject: isMe ? 'you' : first, poss: isMe ? 'your' : `${first}'s`, Poss: isMe ? 'My' : `${first}'s` };
+}
 
 const $ = (id) => document.getElementById(id);
 let data = null;
@@ -69,12 +80,15 @@ function render() {
   $('prsCard').hidden = !ado;
   if (ado) {
     $('prs').innerHTML = prListHtml(ado, now(), (pr) => storyChips(linkedIds(pr.title, pr.source), sprint));
+    const w = who();
+    $('prsMineLabel').textContent = w.isMe ? 'Mine' : `${w.first}'s`;
+    $('reviewsLabel').textContent = w.isMe ? 'To review' : `${w.first} to review`;
     $('prsMineCount').textContent = ado.prs.length || '';
     const reviews = ado.reviews ?? [];
     $('reviewsCount').textContent = reviews.filter((p) => p.myVote === 0).length || '';
     $('reviews').innerHTML = ado.error ? '' : reviews.length
-      ? prListHtml({ ...ado, prs: reviews }, now(), (pr) => `<span class="links muted my-vote">by ${esc(pr.author)} · ${VOTES[pr.myVote] ?? 'no vote yet'}</span>`)
-      : '<li class="muted">Nobody is waiting on your review.</li>';
+      ? prListHtml({ ...ado, prs: reviews }, now(), (pr) => `<span class="links muted my-vote">by ${esc(pr.author)} · ${vote(pr.myVote, w)}</span>`)
+      : `<li class="muted">Nobody is waiting on ${w.poss} review.</li>`;
   }
 }
 
@@ -86,11 +100,11 @@ function renderStats(ss, ado, sprint) {
     tile(waiting, 'waiting for you', waiting ? 'alert' : ''),
     tile(ss.reduce((n, s) => n + s.activeKids.length, 0), 'sub-agents active'),
   ];
-  if (ado) tiles.push(tile(ado.prs.length, 'open PRs'));
+  if (ado) tiles.push(tile(ado.prs.length, who().isMe ? 'open PRs' : `${who().Poss} open PRs`));
   if (sprint?.stories) {
     const pts = (f) => sprint.stories.filter(f).reduce((n, s) => n + (s.points || 0), 0);
     const done = sprint.stories.filter(isDone).length;
-    tiles.push(tile(`${done}/${sprint.stories.length}`, `my stories done · ${pts(isDone)}/${pts(() => true)} pts`));
+    tiles.push(tile(`${done}/${sprint.stories.length}`, `${who().isMe ? 'my' : who().Poss} stories done · ${pts(isDone)}/${pts(() => true)} pts`));
     const days = Math.ceil((sprint.end - now()) / 86_400_000);
     tiles.push(tile(Math.max(0, days), `day${days === 1 ? '' : 's'} left in sprint`));
   }
@@ -108,7 +122,7 @@ function storyChips(ids, sprint) {
 function renderSprint(sprint, ss, ado) {
   $('sprintCard').hidden = !sprint;
   if (!sprint) return;
-  $('sprintTitle').textContent = `My sprint${sprint.name ? ` · ${sprint.name}` : ''}`;
+  $('sprintTitle').textContent = `${who().Poss} sprint${sprint.name ? ` · ${sprint.name}` : ''}`;
   if (sprint.boardUrl) $('boardLink').href = sprint.boardUrl;
   const fmt = (t) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
   let html = sprint.error ? `<p class="err">⚠️ ${esc(sprint.error)}</p>` : '';
@@ -276,10 +290,9 @@ function renderTeam(sprint) {
     if (!members.has(k)) members.set(k, { name: i.assignee?.name ?? 'Unassigned', items: [] });
     members.get(k).items.push(i);
   }
-  const myIds = new Set(sprint.stories.map((s) => s.id));
   const colIndex = (i) => (sprint.columns ?? []).indexOf(i.column);
   const rows = [...members.entries()].sort(([ka, a], [kb, b]) => (ka === '') - (kb === '') || b.items.length - a.items.length).map(([k, m]) => {
-    const me = m.items.some((i) => myIds.has(i.id));
+    const me = k === data.prs.focus?.id;
     const cells = BUCKETS.map(([b]) => { const n = m.items.filter((i) => i.bucket === b).length; return `<td class="cnt b-text-${b} ${n ? '' : 'zero'}">${n || '·'}</td>`; }).join('');
     const row = `<tr data-member="${esc(k)}" class="${me ? 'me' : ''}${openMembers.has(k) ? ' open' : ''}">
       <td class="who"><span class="avatar">${esc(initials(m.name))}</span>${esc(m.name)}</td>
@@ -333,7 +346,9 @@ function attentionItems(ss, ado, sprint) {
   const items = [];
   const link = (url, text) => `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>`;
 
-  for (const s of ss.filter((x) => x.status === 'waiting')) {
+  const w = who();
+  // Claude Code sessions and workspaces on this machine are only ever mine; skip them when focusing on someone else.
+  for (const s of w.isMe ? ss.filter((x) => x.status === 'waiting') : []) {
     items.push({ key: `wait:${s.main.key}:${s.main.lastAt}`, kind: 'waiting', icon: '☕', weight: 0, alert: true,
       title: `${trunc(displayName(s.main), 60)} is waiting for you`,
       html: `<b>${esc(trunc(displayName(s.main), 80))}</b> has been waiting for you for ${ago(s.lastAt)} <span class="muted">· ${esc(s.main.projectName)}</span>` });
@@ -341,9 +356,9 @@ function attentionItems(ss, ado, sprint) {
 
   for (const pr of ado?.reviews ?? []) {
     if (pr.myVote !== 0) continue; // already voted
-    items.push({ key: `review:${pr.id}`, kind: 'review', icon: '👀', weight: 1, alert: true,
+    items.push({ key: `review:${pr.id}`, kind: 'review', icon: '👀', weight: 1, alert: w.isMe,
       title: `Review requested: !${pr.id} ${trunc(pr.title, 60)}`,
-      html: `Review ${link(pr.url, `!${pr.id} ${trunc(pr.title, 70)}`)} from ${esc(pr.author)} <span class="muted">· ${esc(pr.repo)} · opened ${relTime(pr.createdAt)}${pr.iAmRequired ? ' · you are required' : ''}</span>` });
+      html: `${w.isMe ? 'Review' : `${esc(w.first)} owes a review on`} ${link(pr.url, `!${pr.id} ${trunc(pr.title, 70)}`)} from ${esc(pr.author)} <span class="muted">· ${esc(pr.repo)} · opened ${relTime(pr.createdAt)}${pr.iAmRequired ? ` · ${w.isMe ? 'you are' : ''} required` : ''}</span>` });
   }
 
   for (const pr of ado?.prs ?? []) {
@@ -361,16 +376,16 @@ function attentionItems(ss, ado, sprint) {
     const evidence = [];
     for (const pr of ado?.prs ?? []) if (idsIn(pr.title, pr.source).has(st.id)) evidence.push(`PR !${pr.id}`);
     const live = ss.filter((x) => idsIn(x.main.branch).has(st.id) && now() - x.lastAt < DAY).sort((a, b) => b.lastAt - a.lastAt)[0];
-    if (live) evidence.push(`a session active ${relTime(live.lastAt)}`);
+    if (live && w.isMe) evidence.push(`a session active ${relTime(live.lastAt)}`);
     const ws = Object.values(data.workspaces).find((w) => w.git && idsIn(w.branch).has(st.id) && w.lastCommit && now() - w.lastCommit.at < 2 * DAY);
-    if (ws) evidence.push(`a commit in ${ws.repo} ${relTime(ws.lastCommit.at)}`);
+    if (ws && w.isMe) evidence.push(`a commit in ${ws.repo} ${relTime(ws.lastCommit.at)}`);
     if (!evidence.length) continue;
     items.push({ key: `drift:${st.id}:${st.column}`, kind: 'drift', icon: '🧭', weight: 2,
       html: `${link(st.url, `#${st.id} ${trunc(st.title, 60)}`)} is <b>${esc(st.column)}</b> on the board, but has ${evidence.join(', ')}. Move it?` });
   }
 
   // Forgotten work: uncommitted or unpushed changes on a feature branch nobody has touched for a few days.
-  for (const [cwd, w] of Object.entries(data.workspaces)) {
+  for (const [cwd, w] of who().isMe ? Object.entries(data.workspaces) : []) {
     if (!w.git || /^(main|master|develop|trunk|\(detached\))$/.test(w.branch)) continue;
     const touched = Math.max(w.lastCommit?.at ?? 0, ...ss.filter((x) => x.main.project === cwd).map((x) => x.lastAt));
     if (now() - touched < STALE_BRANCH_MS) continue;
@@ -428,6 +443,32 @@ function alertOnNew(items) {
   seen = new Set(alertable.map((i) => i.key));
 }
 
+// ---------- board + focus pickers ----------
+let pickerKey = '';
+function syncPickers() {
+  const ado = data.prs;
+  $('pickers').hidden = !ado?.teams?.length;
+  if (!ado?.teams?.length) return;
+  const loading = !ado.fetchedAt;
+  const key = JSON.stringify([ado.teams.length, ado.project, ado.team, ado.people?.map((p) => p.id), ado.focus?.id]);
+  if (key !== pickerKey) {
+    pickerKey = key;
+    const byProject = new Map();
+    for (const t of ado.teams) byProject.set(t.project, [...(byProject.get(t.project) ?? []), t]);
+    $('board').innerHTML = [...byProject].map(([proj, ts]) => `<optgroup label="${esc(proj)}">${ts.map((t) =>
+      `<option value="${esc(JSON.stringify([t.project, t.name]))}"${t.project === ado.project && t.name === ado.team ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
+    const people = [...(ado.people ?? [])].sort((a, b) => (b.id === ado.me) - (a.id === ado.me) || a.name.localeCompare(b.name));
+    $('focus').innerHTML = people.map((p) => `<option value="${esc(p.id)}"${p.id === ado.focus?.id ? ' selected' : ''}>${esc(p.name)}${p.id === ado.me ? ' (me)' : ''}</option>`).join('');
+  }
+  $('board').disabled = $('focus').disabled = loading;
+  document.body.classList.toggle('switching', loading);
+}
+$('board').addEventListener('change', (ev) => {
+  const [project, team] = JSON.parse(ev.target.value);
+  post('/api/settings', { project, team });
+});
+$('focus').addEventListener('change', (ev) => post('/api/settings', { focusId: ev.target.value }));
+
 // ---------- refresh controls ----------
 const fmtEvery = (sec) => (sec < 60 ? `${sec}s` : `${sec / 60} min`);
 function syncRefresh() {
@@ -462,6 +503,7 @@ function connect() {
     clockOffset = data.now - Date.now();
     $('mode').hidden = !data.demo;
     syncRefresh();
+    syncPickers();
     render();
   };
 }

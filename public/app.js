@@ -670,6 +670,8 @@ function renderPrs(state) {
   ui.prsSection.hidden = !state;
   if (!state) return;
   ui.prsCount.textContent = state.prs.length ? state.prs.length : '';
+  const other = state.focus && state.focus.id !== state.me;
+  $('prsTitle').textContent = other ? `${state.focus.name.split(/\s+/)[0]}'s pull requests` : 'My pull requests';
   ui.prs.innerHTML = prListHtml(state, now());
 }
 

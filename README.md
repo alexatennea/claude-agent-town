@@ -52,6 +52,8 @@ The server binds to `127.0.0.1` only, since transcripts contain your prompts and
 - **Pull requests**: yours, and the ones waiting on your review.
 - **Team delivery**: the whole team's sprint by stage, blocked items, and a per-member breakdown.
 
+Use **Board** and **Focus** in the top bar to look at any team's board and anyone's context (their sprint items, PRs and reviews). It defaults to you and `AZURE_DEVOPS_TEAM`; your choice is saved in `.agent-town.json` (gitignored) along with the refresh interval.
+
 Work item ids in branch names and PR titles (e.g. `story/76812-…`) link sessions, repos and PRs to their sprint story; the server also reads each Claude Code workspace's git state to spot board drift and stale branches.
 
 ## How it works

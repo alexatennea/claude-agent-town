@@ -56,9 +56,20 @@ if (opts.demo) {
 
 const watcher = new ClaudeWatcher({ projectsDir, sinceHours: Number(opts.hours) || 12 });
 
+// Choices made in the dashboard (board, person in focus, refresh rate) persist here; flags and .env are the defaults.
+const settingsFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '.agent-town.json');
+const saved = (() => { try { return JSON.parse(fs.readFileSync(settingsFile, 'utf8')); } catch { return {}; } })();
+const saveSettings = (patch) => {
+  Object.assign(saved, patch);
+  fs.writeFile(settingsFile, JSON.stringify(saved, null, 2), (err) => err && console.warn(`   couldn't save settings: ${err.message}`));
+};
+
 const REFRESH_CHOICES = [30, 60, 120, 300, 900]; // seconds, offered in the dashboard
-let refreshSeconds = REFRESH_CHOICES.includes(Number(process.env.REFRESH_SECONDS)) ? Number(process.env.REFRESH_SECONDS) : 60;
-const azdo = opts['ado-org'] ? new AzDoPrs({ org: opts['ado-org'], tenant: opts['ado-tenant'], project: opts['ado-project'], team: opts['ado-team'], intervalMs: refreshSeconds * 1000 }) : null;
+let refreshSeconds = [saved.refreshSeconds, Number(process.env.REFRESH_SECONDS)].find((n) => REFRESH_CHOICES.includes(n)) ?? 60;
+const azdo = opts['ado-org'] ? new AzDoPrs({
+  org: opts['ado-org'], tenant: opts['ado-tenant'], intervalMs: refreshSeconds * 1000,
+  project: saved.project ?? opts['ado-project'], team: saved.team ?? opts['ado-team'], focusId: saved.focusId ?? null,
+}) : null;
 azdo?.start();
 const workspaces = new Workspaces({ cwds: () => watcher.snapshot().map((a) => a.project) });
 
@@ -104,11 +115,30 @@ const server = http.createServer((req, res) => {
       let body = '';
       req.on('data', (c) => { body += c; if (body.length > 1e4) req.destroy(); });
       req.on('end', () => {
-        let seconds;
-        try { seconds = Number(JSON.parse(body || '{}').refreshSeconds); } catch { seconds = NaN; }
-        if (!REFRESH_CHOICES.includes(seconds)) { res.writeHead(400); return res.end('bad refreshSeconds'); }
-        refreshSeconds = seconds;
-        azdo?.setIntervalMs(seconds * 1000);
+        let b;
+        try { b = JSON.parse(body || '{}'); } catch { b = null; }
+        const fail = (msg) => { res.writeHead(400); res.end(msg); };
+        if (!b || typeof b !== 'object') return fail('bad JSON');
+        if ('refreshSeconds' in b) {
+          if (!REFRESH_CHOICES.includes(b.refreshSeconds)) return fail('bad refreshSeconds');
+          refreshSeconds = b.refreshSeconds;
+          azdo?.setIntervalMs(refreshSeconds * 1000);
+          saveSettings({ refreshSeconds });
+        }
+        if (azdo && ('team' in b || 'focusId' in b)) {
+          const pick = {};
+          if ('team' in b) {
+            const t = azdo.snapshot().teams?.find((x) => x.project === b.project && x.name === b.team);
+            if (!t) return fail('unknown team');
+            Object.assign(pick, { project: t.project, team: t.name });
+          }
+          if ('focusId' in b) {
+            if (b.focusId !== null && !/^[0-9a-f-]{36}$/i.test(b.focusId)) return fail('bad focusId');
+            pick.focusId = b.focusId === azdo.snapshot().me ? null : b.focusId; // null = whoever is signed in
+          }
+          saveSettings(pick);
+          azdo.select(pick).then(broadcast);
+        }
         broadcast();
         res.writeHead(204);
         res.end();

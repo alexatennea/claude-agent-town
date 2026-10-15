@@ -81,6 +81,9 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
 .worm .key.proj { border-color: var(--accent); border-top-style: dotted; opacity: .8; }
 
 /* attention */
+.pickers { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.pickers select { margin-left: 4px; padding: 4px 6px; font-size: 12px; max-width: 240px; }
+body.switching .grid { opacity: .5; transition: opacity .2s; }
 .refresh { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .refresh select { padding: 3px 6px; font-size: 12px; margin-left: 4px; }
 .btn { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }

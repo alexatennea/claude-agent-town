@@ -11,6 +11,10 @@
   <header class="topbar">
     <h1>🏘️ Agent Town <span id="conn" class="dot" title="connecting"></span></h1>
     <nav class="tabs"><a href="/">Town</a><a href="/dashboard" class="on">Dashboard</a></nav>
+    <span id="pickers" class="pickers" hidden>
+      <label class="muted">Board <select id="board"></select></label>
+      <label class="muted">Focus <select id="focus"></select></label>
+    </span>
     <span id="mode" class="badge" hidden>DEMO</span>
     <span class="refresh">
       <span id="updated" class="muted"></span>
@@ -41,8 +45,8 @@
       <section class="card" id="prsCard" hidden>
         <div class="card-head"><h2>Pull requests</h2></div>
         <div class="pr-cols">
-          <div><h3>Mine <span id="prsMineCount" class="count"></span></h3><ul id="prs" class="prs"></ul></div>
-          <div><h3>To review <span id="reviewsCount" class="count"></span></h3><ul id="reviews" class="prs"></ul></div>
+          <div><h3><span id="prsMineLabel">Mine</span> <span id="prsMineCount" class="count"></span></h3><ul id="prs" class="prs"></ul></div>
+          <div><h3><span id="reviewsLabel">To review</span> <span id="reviewsCount" class="count"></span></h3><ul id="reviews" class="prs"></ul></div>
         </div>
       </section>
     </div>
