@@ -116,7 +116,11 @@ table.members { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .members tr[data-member] { cursor: pointer; }
 .members tr[data-member]:hover td { background: var(--panel-2); }
 .members tr.me td.who { color: var(--accent); font-weight: 600; }
-.members td.zero { color: var(--line); }
+.members .cnt { width: 84px; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.members td.cnt { font-weight: 600; }
+.members .cnt.sum { border-left: 1px solid var(--line); }
+.members td.cnt.sum { font-weight: 400; color: var(--muted); }
+.members td.zero { color: var(--line); font-weight: 400; }
 .members .who { white-space: nowrap; }
 .members .bar-cell { width: 34%; min-width: 120px; }
 .members tr.detail td { background: var(--panel-2); padding: 10px 12px; }

@@ -219,10 +219,10 @@ function renderTeam(sprint) {
   const myIds = new Set(sprint.stories.map((s) => s.id));
   const rows = [...members.entries()].sort(([ka, a], [kb, b]) => (ka === '') - (kb === '') || b.items.length - a.items.length).map(([k, m]) => {
     const me = m.items.some((i) => myIds.has(i.id));
-    const cells = BUCKETS.map(([b]) => { const n = m.items.filter((i) => i.bucket === b).length; return `<td class="num ${n ? '' : 'zero'}">${n || '·'}</td>`; }).join('');
+    const cells = BUCKETS.map(([b]) => { const n = m.items.filter((i) => i.bucket === b).length; return `<td class="cnt b-text-${b} ${n ? '' : 'zero'}">${n || '·'}</td>`; }).join('');
     const row = `<tr data-member="${esc(k)}" class="${me ? 'me' : ''}${openMembers.has(k) ? ' open' : ''}">
       <td class="who"><span class="avatar">${esc(initials(m.name))}</span>${esc(m.name)}</td>
-      <td class="bar-cell">${stackBar(m.items)}</td>${cells}<td class="num">${sumPts(m.items)}</td></tr>`;
+      <td class="bar-cell">${stackBar(m.items)}</td>${cells}<td class="cnt sum">${sumPts(m.items)}</td></tr>`;
     if (!openMembers.has(k)) return row;
     return row + `<tr class="detail"><td colspan="${BUCKETS.length + 3}"><ul class="member-items">${m.items.map((i) => itemLine(i)).join('')}</ul></td></tr>`;
   }).join('');
@@ -238,7 +238,7 @@ function renderTeam(sprint) {
     </div>
     ${blocked.length ? `<div class="blocked"><h3>Blocked / on hold <span class="count">${blocked.length}</span></h3><ul class="member-items">${blocked.map((i) => itemLine(i, true)).join('')}</ul></div>` : ''}
     <div class="table-wrap"><table class="members">
-      <thead><tr><th>Member</th><th></th>${BUCKETS.map(([b, l, short]) => `<th class="num" title="${l}"><span class="sw b-${b}"></span>${short}</th>`).join('')}<th class="num">Pts</th></tr></thead>
+      <thead><tr><th>Member</th><th></th>${BUCKETS.map(([b, l, short]) => `<th class="cnt" title="${l}"><span class="sw b-${b}"></span>${short}</th>`).join('')}<th class="cnt sum">Pts</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
 }
 
