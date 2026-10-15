@@ -14,7 +14,6 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
   padding: 20px 24px 40px; max-width: 1600px; margin: 0 auto; align-items: start;
 }
 .wide { grid-column: 1 / -1; }
-.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
@@ -42,6 +41,8 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
 .chip.dirty { background: rgba(217, 119, 87, .18); color: var(--accent); }
 .chip.clean { color: var(--ok); }
 .chip.pr:hover, .story-chip:hover { outline: 1px solid var(--accent); }
+.prs li > .links { display: block; padding: 0 6px 6px; margin-top: -4px; }
+.prs li > .links .story-chip { margin-left: 0; }
 .story-chip { font-size: 11px; color: var(--accent); text-decoration: none; margin-left: 6px; }
 .branch { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-right: 6px; overflow-wrap: anywhere; }
 
@@ -54,9 +55,12 @@ table.sessions { width: 100%; border-collapse: collapse; }
 .sessions tr[data-key]:hover td { background: var(--panel-2); }
 .sessions tr.s-waiting td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .sessions tr.s-idle td { color: var(--muted); }
-.sessions .title { max-width: 320px; }
+.sessions td.title { width: 45%; max-width: 0; }
+.sessions .title .t, .sessions .title .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessions .title .sub { margin-top: 2px; font-size: 12px; color: var(--muted); }
+.sessions .title .branch { margin-left: 6px; }
 .sessions .ws { margin-right: 6px; }
-.sessions .what { color: var(--muted); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessions .what { color: var(--muted); max-width: 0; width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sessions tr.detail td { background: var(--panel-2); padding: 10px 12px 12px; cursor: default; }
 .detail .task { white-space: pre-wrap; max-height: 110px; overflow: auto; margin-bottom: 8px; }
@@ -73,6 +77,8 @@ table.sessions { width: 100%; border-collapse: collapse; }
 .bar { flex: 1; height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 .col h3 { margin: 14px 0 6px; }
+#sprint { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: 14px; align-items: start; }
+#sprint > .sprint-dates, #sprint > p { grid-column: 1 / -1; }
 .stories { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .stories li { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
 .stories li.done { opacity: .55; }
@@ -80,6 +86,41 @@ table.sessions { width: 100%; border-collapse: collapse; }
 .story:hover .stitle { text-decoration: underline; }
 .sid { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .pts { background: var(--line); border-radius: 99px; font-size: 11px; padding: 0 7px; font-weight: 700; }
+
+/* team delivery */
+.b-awaiting { background: #6b7085; } .b-blocked { background: #e05d5d; } .b-progress { background: #5b9cf0; }
+.b-test { background: var(--warn); } .b-done { background: var(--ok); }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; flex-shrink: 0; }
+.stack-bar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--panel-2); gap: 2px; }
+.stack-bar i { display: block; min-width: 4px; }
+.health { margin-bottom: 6px; }
+.health-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--muted); flex-wrap: wrap; }
+.health .stack-bar { height: 14px; }
+.pace { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 99px; }
+.pace.ok { background: rgba(111, 207, 127, .16); color: var(--ok); }
+.pace.warn { background: rgba(242, 193, 78, .18); color: var(--warn); }
+.pace.bad { background: rgba(224, 93, 93, .18); color: #e05d5d; }
+.buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.bucket { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 2px; }
+.bucket b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.bucket span:not(.sw) { grid-column: 1 / -1; font-size: 12px; }
+.blocked h3 { margin: 14px 0 6px; }
+.member-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.member-items li { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.member-items a { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.member-items a:hover { text-decoration: underline; }
+.member-items .muted { font-size: 12px; white-space: nowrap; margin-left: auto; padding-left: 8px; }
+table.members { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.members th { text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.members td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.members tr[data-member] { cursor: pointer; }
+.members tr[data-member]:hover td { background: var(--panel-2); }
+.members tr.me td.who { color: var(--accent); font-weight: 600; }
+.members td.zero { color: var(--line); }
+.members .who { white-space: nowrap; }
+.members .bar-cell { width: 34%; min-width: 120px; }
+.members tr.detail td { background: var(--panel-2); padding: 10px 12px; }
+.avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--line); font-size: 10px; font-weight: 700; margin-right: 8px; color: var(--text); }
 
 /* workspaces */
 .workspaces { list-style: none; margin: 0; padding: 0; }
@@ -92,7 +133,9 @@ table.sessions { width: 100%; border-collapse: collapse; }
 .ws-commit { font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1000px) {
+  .buckets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .members .bar-cell { display: none; }
   .grid { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .topbar { padding: 10px 16px; gap: 10px; flex-wrap: wrap; }
-  .sessions .what, .sessions th:nth-child(4), .sessions td:nth-child(4) { display: none; }
+  .sessions .what, .sessions th:nth-child(3) { display: none; }
 }

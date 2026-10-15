@@ -17,26 +17,30 @@
   <main class="grid">
     <section id="stats" class="kpis wide"></section>
 
-    <section class="card wide">
-      <div class="card-head"><h2>Sessions</h2><label class="muted"><input type="checkbox" id="showIdle"> Show idle</label></div>
-      <div id="sessions"></div>
-    </section>
-
     <section class="card" id="sprintCard" hidden>
       <div class="card-head"><h2 id="sprintTitle">Sprint</h2><a id="boardLink" target="_blank" rel="noopener" class="muted">Open board ↗</a></div>
       <div id="sprint"></div>
     </section>
 
-    <div class="stack">
-      <section class="card">
-        <div class="card-head"><h2>Environments</h2><span class="muted">Claude Code workspaces</span></div>
-        <div id="workspaces"></div>
-      </section>
-      <section class="card" id="prsCard" hidden>
-        <div class="card-head"><h2>My pull requests</h2></div>
-        <ul id="prs" class="prs"></ul>
-      </section>
-    </div>
+    <section class="card" id="prsCard" hidden>
+      <div class="card-head"><h2>My pull requests</h2></div>
+      <ul id="prs" class="prs"></ul>
+    </section>
+
+    <section class="card wide" id="teamCard" hidden>
+      <div class="card-head"><h2 id="teamTitle">Team delivery</h2><a id="teamBoardLink" target="_blank" rel="noopener" class="muted">Open board ↗</a></div>
+      <div id="team"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Sessions</h2><label class="muted"><input type="checkbox" id="showIdle"> Show idle</label></div>
+      <div id="sessions"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Environments</h2><span class="muted">Claude Code workspaces</span></div>
+      <div id="workspaces"></div>
+    </section>
   </main>
   <script src="/dashboard.js" type="module"></script>
 </body>

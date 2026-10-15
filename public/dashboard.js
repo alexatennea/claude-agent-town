@@ -4,12 +4,17 @@ import { ACTS, esc, trunc, fmtK, displayName, stateOf as stateAt, relTime as rel
 
 const RECENT_MS = 30 * 60_000; // idle sessions quieter than this are hidden unless "Show idle"
 const WAIT_MS = 4 * 3600_000; // a session waiting on you longer than this was most likely left, not paused
-const DONE_STATES = new Set(['Closed', 'Done', 'Resolved', 'Ready for Release']);
+const BUCKETS = [ // delivery stages, in board order; the server assigns each item one
+  ['awaiting', 'Awaiting', 'Awaiting'], ['blocked', 'Blocked / on hold', 'Blocked'], ['progress', 'In progress', 'Doing'],
+  ['test', 'In test', 'Test'], ['done', 'Done', 'Done'],
+];
+const isDone = (s) => s.bucket === 'done';
 
 const $ = (id) => document.getElementById(id);
 let data = null;
 let clockOffset = 0;
 const open = new Set(); // expanded session keys
+const openMembers = new Set(); // expanded team member rows
 const now = () => Date.now() + clockOffset;
 const stateOf = (a) => stateAt(a, now());
 const relTime = (ts) => relTimeAt(ts, now());
@@ -17,6 +22,13 @@ const relTime = (ts) => relTimeAt(ts, now());
 $('showIdle').checked = (() => { try { return localStorage.getItem('dash-show-idle') === '1'; } catch { return false; } })();
 $('showIdle').addEventListener('change', () => {
   try { localStorage.setItem('dash-show-idle', $('showIdle').checked ? '1' : '0'); } catch { /* storage unavailable */ }
+  render();
+});
+$('team').addEventListener('click', (ev) => {
+  const row = ev.target.closest('[data-member]');
+  if (!row || ev.target.closest('a')) return;
+  const k = row.dataset.member;
+  openMembers.has(k) ? openMembers.delete(k) : openMembers.add(k);
   render();
 });
 $('sessions').addEventListener('click', (ev) => {
@@ -61,6 +73,7 @@ function render() {
   renderStats(ss, ado, sprint);
   renderSessions(ss, linkedIds);
   renderSprint(sprint, ss, ado);
+  renderTeam(sprint);
   renderWorkspaces(ss, linkedIds);
   $('prsCard').hidden = !ado;
   if (ado) $('prs').innerHTML = prListHtml(ado, now(), (pr) => storyChips(linkedIds(pr.title, pr.source), sprint));
@@ -77,8 +90,8 @@ function renderStats(ss, ado, sprint) {
   if (ado) tiles.push(tile(ado.prs.length, 'open PRs'));
   if (sprint?.stories) {
     const pts = (f) => sprint.stories.filter(f).reduce((n, s) => n + (s.points || 0), 0);
-    const done = sprint.stories.filter((s) => DONE_STATES.has(s.state)).length;
-    tiles.push(tile(`${done}/${sprint.stories.length}`, `stories done · ${pts((s) => DONE_STATES.has(s.state))}/${pts(() => true)} pts`));
+    const done = sprint.stories.filter(isDone).length;
+    tiles.push(tile(`${done}/${sprint.stories.length}`, `my stories done · ${pts(isDone)}/${pts(() => true)} pts`));
     const days = Math.ceil((sprint.end - now()) / 86_400_000);
     tiles.push(tile(Math.max(0, days), `day${days === 1 ? '' : 's'} left in sprint`));
   }
@@ -102,25 +115,25 @@ function renderSessions(ss, linkedIds) {
     const ids = linkedIds(m.branch);
     const row = `<tr data-key="${esc(m.key)}" class="s-${s.status}${open.has(m.key) ? ' open' : ''}">
       <td><span class="chip ${s.status}">${STATUS[s.status][0]} ${STATUS[s.status][1]}</span></td>
-      <td class="title"><span title="${esc(displayName(m))}">${esc(trunc(displayName(m), 70))}</span></td>
-      <td><span class="ws">${esc(m.projectName)}</span>${m.branch ? `<span class="branch">${esc(m.branch)}</span>` : ''}${storyChips(ids, data.prs?.sprint)}</td>
-      <td class="what" title="${esc(what)}">${esc(trunc(what, 90))}</td>
+      <td class="title"><div class="t" title="${esc(displayName(m))}">${esc(displayName(m))}</div>
+        <div class="sub"><span class="ws">${esc(m.projectName)}</span>${m.branch ? `<span class="branch" title="${esc(m.branch)}">${esc(m.branch)}</span>` : ''}${storyChips(ids, data.prs?.sprint)}</div></td>
+      <td class="what" title="${esc(what)}">${esc(what)}</td>
       <td class="num">${s.kids.length ? `${s.activeKids.length}/${s.kids.length}` : '–'}</td>
-      <td class="num">${fmtK(m.contextTokens)}</td>
       <td class="num">${relTime(s.lastAt)}</td>
     </tr>`;
     if (!open.has(m.key)) return row;
     const events = [...m.events].slice(-8).reverse();
-    return row + `<tr class="detail"><td colspan="7">
+    return row + `<tr class="detail"><td colspan="5">
       ${m.task ? `<div class="task">${esc(m.task)}</div>` : ''}
       <div class="kv"><span>Workspace</span><span>${esc(m.project)}</span><span>Model</span><span>${esc(m.model || '?')}</span>
-        <span>Started</span><span>${relTime(m.startedAt)}</span><span>Tool calls</span><span>${m.toolCalls}</span></div>
+        <span>Started</span><span>${relTime(m.startedAt)}</span><span>Tool calls</span><span>${m.toolCalls}</span>
+        <span>Branch</span><span>${esc(m.branch || '–')}</span><span>Context</span><span>${fmtK(m.contextTokens)} tokens</span></div>
       ${s.kids.length ? `<div class="kids">${s.kids.sort((a, b) => b.lastAt - a.lastAt).map((k) => `<span class="chip ${['idle', 'done'].includes(stateOf(k)) ? 'idle' : 'working'}">${ACTS[stateOf(k)].emoji} ${esc(trunc(displayName(k), 40))}</span>`).join('')}</div>` : ''}
       ${events.length ? `<ul class="log">${events.map((e) => `<li><time>${new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><span>${esc(e.text)}</span></li>`).join('')}</ul>` : ''}
     </td></tr>`;
   });
   $('sessions').innerHTML = `<div class="table-wrap"><table class="sessions">
-    <thead><tr><th>Status</th><th>Session</th><th>Workspace</th><th>Doing</th><th class="num">Sub-agents</th><th class="num">Context</th><th class="num">Last active</th></tr></thead>
+    <thead><tr><th>Status</th><th>Session</th><th>Doing</th><th class="num" title="active / total sub-agents">Subs</th><th class="num">Active</th></tr></thead>
     <tbody>${rows.join('')}</tbody></table></div>
     ${hidden ? `<p class="muted foot">${hidden} idle session${hidden > 1 ? 's' : ''} hidden</p>` : ''}`;
 }
@@ -156,7 +169,7 @@ function renderSprint(sprint, ss, ado) {
     const items = sprint.stories.filter((s) => s.column === col);
     return `<div class="col"><h3>${esc(col)} <span class="count">${items.length}</span></h3><ul class="stories">${items.map((s) => {
       const prs = prsFor(s.id), ws = wsFor(s.id), live = sessFor(s.id);
-      return `<li class="${DONE_STATES.has(s.state) ? 'done' : ''}">
+      return `<li class="${isDone(s) ? 'done' : ''}">
         <a class="story" href="${esc(s.url)}" target="_blank" rel="noopener">
           <span class="sid">${s.type === 'User Story' ? '' : `${esc(s.type)} `}#${s.id}</span>
           <span class="stitle">${esc(s.title)}</span>
@@ -171,6 +184,68 @@ function renderSprint(sprint, ss, ado) {
   }).join('');
   $('sprint').innerHTML = html;
 }
+
+const sumPts = (items) => items.reduce((n, i) => n + (i.points || 0), 0);
+const stackBar = (items) => `<div class="stack-bar">${BUCKETS.map(([b, label]) => {
+  const n = items.filter((i) => i.bucket === b).length;
+  return n ? `<i class="b-${b}" style="flex:${n}" title="${label}: ${n}"></i>` : '';
+}).join('')}</div>`;
+
+function renderTeam(sprint) {
+  const team = sprint?.team;
+  $('teamCard').hidden = !team;
+  if (!team) return;
+  $('teamTitle').textContent = `Team delivery${sprint.name ? ` · ${sprint.name}` : ''}`;
+  if (sprint.boardUrl) $('teamBoardLink').href = sprint.boardUrl;
+  if (!team.length) { $('team').innerHTML = '<p class="empty">Nothing in this sprint yet.</p>'; return; }
+
+  // Health: share of points done vs share of the sprint gone.
+  const total = sumPts(team), done = sumPts(team.filter(isDone));
+  const elapsed = sprint.start ? Math.min(1, Math.max(0, (now() - sprint.start) / (sprint.end - sprint.start))) : null;
+  const donePct = total ? done / total : team.filter(isDone).length / team.length;
+  const pace = elapsed == null ? null : donePct >= elapsed - 0.1 ? ['ok', 'On track'] : donePct >= elapsed - 0.3 ? ['warn', 'Behind'] : ['bad', 'At risk'];
+  const counts = BUCKETS.map(([b, label]) => {
+    const items = team.filter((i) => i.bucket === b);
+    return `<div class="bucket"><span class="sw b-${b}"></span><b>${items.length}</b><span>${label}</span><span class="muted">${sumPts(items)} pts</span></div>`;
+  }).join('');
+  const blocked = team.filter((i) => i.bucket === 'blocked');
+
+  const members = new Map();
+  for (const i of team) {
+    const k = i.assignee?.id ?? '';
+    if (!members.has(k)) members.set(k, { name: i.assignee?.name ?? 'Unassigned', items: [] });
+    members.get(k).items.push(i);
+  }
+  const myIds = new Set(sprint.stories.map((s) => s.id));
+  const rows = [...members.entries()].sort(([ka, a], [kb, b]) => (ka === '') - (kb === '') || b.items.length - a.items.length).map(([k, m]) => {
+    const me = m.items.some((i) => myIds.has(i.id));
+    const cells = BUCKETS.map(([b]) => { const n = m.items.filter((i) => i.bucket === b).length; return `<td class="num ${n ? '' : 'zero'}">${n || '·'}</td>`; }).join('');
+    const row = `<tr data-member="${esc(k)}" class="${me ? 'me' : ''}${openMembers.has(k) ? ' open' : ''}">
+      <td class="who"><span class="avatar">${esc(initials(m.name))}</span>${esc(m.name)}</td>
+      <td class="bar-cell">${stackBar(m.items)}</td>${cells}<td class="num">${sumPts(m.items)}</td></tr>`;
+    if (!openMembers.has(k)) return row;
+    return row + `<tr class="detail"><td colspan="${BUCKETS.length + 3}"><ul class="member-items">${m.items.map((i) => itemLine(i)).join('')}</ul></td></tr>`;
+  }).join('');
+
+  $('team').innerHTML = `
+    <div class="health">
+      <div class="health-top">
+        ${pace ? `<span class="pace ${pace[0]}">${pace[1]}</span>` : ''}
+        <span>${done}/${total} pts done (${Math.round(donePct * 100)}%)${elapsed != null ? ` with ${Math.round(elapsed * 100)}% of the sprint gone` : ''} · ${team.length} items</span>
+      </div>
+      ${stackBar(team)}
+      <div class="buckets">${counts}</div>
+    </div>
+    ${blocked.length ? `<div class="blocked"><h3>Blocked / on hold <span class="count">${blocked.length}</span></h3><ul class="member-items">${blocked.map((i) => itemLine(i, true)).join('')}</ul></div>` : ''}
+    <div class="table-wrap"><table class="members">
+      <thead><tr><th>Member</th><th></th>${BUCKETS.map(([b, l, short]) => `<th class="num" title="${l}"><span class="sw b-${b}"></span>${short}</th>`).join('')}<th class="num">Pts</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+
+const initials = (name) => name.split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+const itemLine = (i, withWho = false) => `<li><span class="sw b-${i.bucket}" title="${esc(i.column)}"></span>
+  <a href="${esc(i.url)}" target="_blank" rel="noopener"><span class="sid">#${i.id}</span> ${esc(i.title)}</a>
+  <span class="muted">${esc(i.column)}${withWho ? ` · ${esc(i.assignee?.name ?? 'Unassigned')}` : ''}${i.points != null ? ` · ${i.points} pts` : ''}</span></li>`;
 
 function renderWorkspaces(ss, linkedIds) {
   const entries = Object.entries(data.workspaces).map(([cwd, w]) => {
