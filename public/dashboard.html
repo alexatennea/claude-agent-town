@@ -12,19 +12,28 @@
     <h1>🏘️ Agent Town <span id="conn" class="dot" title="connecting"></span></h1>
     <nav class="tabs"><a href="/">Town</a><a href="/dashboard" class="on">Dashboard</a></nav>
     <span id="mode" class="badge" hidden>DEMO</span>
+    <button id="alerts" class="alerts" title="Desktop notification when a session starts waiting for you or a review is requested">🔕 Alerts off</button>
   </header>
 
   <main class="grid">
     <section id="stats" class="kpis wide"></section>
 
-    <section class="card" id="sprintCard" hidden>
-      <div class="card-head"><h2 id="sprintTitle">Sprint</h2><a id="boardLink" target="_blank" rel="noopener" class="muted">Open board ↗</a></div>
-      <div id="sprint"></div>
+    <section class="card attention-card">
+      <div class="card-head"><h2>Needs your attention <span id="attentionCount" class="count"></span></h2><button id="showSnoozed" class="linkish" hidden></button></div>
+      <div id="attention"></div>
     </section>
 
     <section class="card" id="prsCard" hidden>
-      <div class="card-head"><h2>My pull requests</h2></div>
+      <div class="card-head"><h2>Pull requests</h2></div>
+      <h3>Mine <span id="prsMineCount" class="count"></span></h3>
       <ul id="prs" class="prs"></ul>
+      <h3>To review <span id="reviewsCount" class="count"></span></h3>
+      <ul id="reviews" class="prs"></ul>
+    </section>
+
+    <section class="card wide" id="sprintCard" hidden>
+      <div class="card-head"><h2 id="sprintTitle">My sprint</h2><a id="boardLink" target="_blank" rel="noopener" class="muted">Open board ↗</a></div>
+      <div id="sprint"></div>
     </section>
 
     <section class="card wide" id="teamCard" hidden>

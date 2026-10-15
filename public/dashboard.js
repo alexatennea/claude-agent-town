@@ -9,6 +9,7 @@ const BUCKETS = [ // delivery stages, in board order; the server assigns each it
   ['test', 'In test', 'Test'], ['done', 'Done', 'Done'],
 ];
 const isDone = (s) => s.bucket === 'done';
+const VOTES = { 10: '✅ you approved', 5: '✅ you approved with suggestions', [-5]: '⏳ you asked for changes', [-10]: '❌ you rejected', 0: '<b>needs your vote</b>' };
 
 const $ = (id) => document.getElementById(id);
 let data = null;
@@ -70,13 +71,24 @@ function render() {
   const sprint = ado?.sprint;
   const storyIds = new Set(sprint?.stories?.map((s) => s.id) ?? []);
   const linkedIds = (...t) => [...idsIn(...t)].filter((id) => storyIds.has(id));
+  const attention = attentionItems(ss, ado, sprint);
+  renderAttention(attention);
+  alertOnNew(attention);
   renderStats(ss, ado, sprint);
   renderSessions(ss, linkedIds);
   renderSprint(sprint, ss, ado);
   renderTeam(sprint);
   renderWorkspaces(ss, linkedIds);
   $('prsCard').hidden = !ado;
-  if (ado) $('prs').innerHTML = prListHtml(ado, now(), (pr) => storyChips(linkedIds(pr.title, pr.source), sprint));
+  if (ado) {
+    $('prs').innerHTML = prListHtml(ado, now(), (pr) => storyChips(linkedIds(pr.title, pr.source), sprint));
+    $('prsMineCount').textContent = ado.prs.length || '';
+    const reviews = ado.reviews ?? [];
+    $('reviewsCount').textContent = reviews.filter((p) => p.myVote === 0).length || '';
+    $('reviews').innerHTML = ado.error ? '' : reviews.length
+      ? prListHtml({ ...ado, prs: reviews }, now(), (pr) => `<span class="links muted my-vote">by ${esc(pr.author)} · ${VOTES[pr.myVote] ?? 'no vote yet'}</span>`)
+      : '<li class="muted">Nobody is waiting on your review.</li>';
+  }
 }
 
 function renderStats(ss, ado, sprint) {
@@ -109,7 +121,7 @@ function renderSessions(ss, linkedIds) {
   }
   const rows = show.map((s) => {
     const m = s.main;
-    const what = s.status === 'waiting' ? 'Waiting for you'
+    const what = s.status === 'waiting' ? `Waiting for you · ${ago(s.lastAt)}`
       : s.busy ? `${ACTS[stateOf(s.busy)].emoji} ${ACTS[stateOf(s.busy)].label}${s.busy.detail ? `: ${s.busy.detail}` : ''}${s.busy !== m ? ` (${displayName(s.busy)})` : ''}`
       : m.done ? 'Finished' : 'Idle';
     const ids = linkedIds(m.branch);
@@ -147,7 +159,7 @@ function storyChips(ids, sprint) {
 function renderSprint(sprint, ss, ado) {
   $('sprintCard').hidden = !sprint;
   if (!sprint) return;
-  $('sprintTitle').textContent = sprint.name ? `Sprint ${sprint.name}` : 'Sprint';
+  $('sprintTitle').textContent = `My sprint${sprint.name ? ` · ${sprint.name}` : ''}`;
   if (sprint.boardUrl) $('boardLink').href = sprint.boardUrl;
   const fmt = (t) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
   let html = sprint.error ? `<p class="err">⚠️ ${esc(sprint.error)}</p>` : '';
@@ -163,10 +175,11 @@ function renderSprint(sprint, ss, ado) {
   const wsFor = (id) => Object.entries(data.workspaces).filter(([, w]) => w.git && idsIn(w.branch).has(id));
   const sessFor = (id) => ss.filter((s) => s.status !== 'idle' && idsIn(s.main.branch).has(id));
 
-  const cols = [...new Set([...(sprint.columns ?? []), ...sprint.stories.map((s) => s.column)])]
-    .filter((c) => sprint.stories.some((s) => s.column === c));
-  html += cols.map((col) => {
+  // Every board column in board order, like the board itself; empty ones collapse to a thin strip.
+  const cols = [...new Set([...(sprint.columns ?? []), ...sprint.stories.map((s) => s.column)])];
+  html += '<div class="kanban">' + cols.map((col) => {
     const items = sprint.stories.filter((s) => s.column === col);
+    if (!items.length) return `<div class="col empty" title="${esc(col)}: nothing of yours"><h3>${esc(col)}</h3></div>`;
     return `<div class="col"><h3>${esc(col)} <span class="count">${items.length}</span></h3><ul class="stories">${items.map((s) => {
       const prs = prsFor(s.id), ws = wsFor(s.id), live = sessFor(s.id);
       return `<li class="${isDone(s) ? 'done' : ''}">
@@ -181,7 +194,7 @@ function renderSprint(sprint, ss, ado) {
         ${ws.map(([cwd, w]) => `<span class="chip ws" title="${esc(cwd)}">📁 ${esc(w.repo)}</span>`).join('')}
       </li>`;
     }).join('')}</ul></div>`;
-  }).join('');
+  }).join('') + '</div>';
   $('sprint').innerHTML = html;
 }
 
@@ -276,6 +289,123 @@ function renderWorkspaces(ss, linkedIds) {
       ${w.lastCommit ? `<div class="muted ws-commit" title="${esc(w.lastCommit.message)}">${esc(trunc(w.lastCommit.message, 70))} · ${relTime(w.lastCommit.at)}</div>` : ''}
     </li>`;
   }).join('')}</ul>`;
+}
+
+// ---------- needs your attention ----------
+const DAY = 86_400_000;
+const ago = (ts) => relTime(ts).replace(' ago', '');
+const SNOOZE_KEY = 'dash-snoozed';
+let snoozed = (() => { try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) || '{}'); } catch { return {}; } })();
+function snooze(key) {
+  snoozed[key] = Date.now() + DAY;
+  for (const [k, until] of Object.entries(snoozed)) if (until < Date.now()) delete snoozed[k];
+  try { localStorage.setItem(SNOOZE_KEY, JSON.stringify(snoozed)); } catch { /* storage unavailable */ }
+  render();
+}
+$('attention').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-snooze]');
+  if (b) snooze(b.dataset.snooze);
+});
+$('showSnoozed').addEventListener('click', () => { snoozed = {}; try { localStorage.removeItem(SNOOZE_KEY); } catch { /* storage unavailable */ } render(); });
+
+// Each item: key (stable, for snooze/alerts), kind, icon, html text, optional url, sort weight.
+function attentionItems(ss, ado, sprint) {
+  const items = [];
+  const link = (url, text) => `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>`;
+
+  for (const s of ss.filter((x) => x.status === 'waiting')) {
+    items.push({ key: `wait:${s.main.key}:${s.main.lastAt}`, kind: 'waiting', icon: '☕', weight: 0, alert: true,
+      title: `${trunc(displayName(s.main), 60)} is waiting for you`,
+      html: `<b>${esc(trunc(displayName(s.main), 80))}</b> has been waiting for you for ${ago(s.lastAt)} <span class="muted">· ${esc(s.main.projectName)}</span>` });
+  }
+
+  for (const pr of ado?.reviews ?? []) {
+    if (pr.myVote !== 0) continue; // already voted
+    items.push({ key: `review:${pr.id}`, kind: 'review', icon: '👀', weight: 1, alert: true,
+      title: `Review requested: !${pr.id} ${trunc(pr.title, 60)}`,
+      html: `Review ${link(pr.url, `!${pr.id} ${trunc(pr.title, 70)}`)} from ${esc(pr.author)} <span class="muted">· ${esc(pr.repo)} · opened ${relTime(pr.createdAt)}${pr.iAmRequired ? ' · you are required' : ''}</span>` });
+  }
+
+  for (const pr of ado?.prs ?? []) {
+    const p = link(pr.url, `!${pr.id} ${trunc(pr.title, 60)}`);
+    const age = now() - pr.createdAt;
+    if (pr.rejected || pr.waiting) items.push({ key: `pr-changes:${pr.id}`, kind: 'pr', icon: '✍️', weight: 2, html: `${p} has changes requested` });
+    if (pr.mergeStatus === 'conflicts') items.push({ key: `pr-conflict:${pr.id}`, kind: 'pr', icon: '⚠️', weight: 2, html: `${p} has merge conflicts` });
+    if (pr.draft && age > DAY) items.push({ key: `pr-draft:${pr.id}`, kind: 'pr', icon: '📝', weight: 4, html: `${p} has been a draft for ${ago(pr.createdAt)}; publish it when it's ready for review` });
+    else if (!pr.draft && !pr.reviewers) items.push({ key: `pr-noreview:${pr.id}`, kind: 'pr', icon: '🙋', weight: 3, html: `${p} has no reviewers` });
+  }
+
+  // Board drift: my stories whose column says "not started / on hold" while there's live work on them.
+  for (const st of sprint?.stories ?? []) {
+    if (!['awaiting', 'blocked'].includes(st.bucket)) continue;
+    const evidence = [];
+    for (const pr of ado?.prs ?? []) if (idsIn(pr.title, pr.source).has(st.id)) evidence.push(`PR !${pr.id}`);
+    const live = ss.filter((x) => idsIn(x.main.branch).has(st.id) && now() - x.lastAt < DAY).sort((a, b) => b.lastAt - a.lastAt)[0];
+    if (live) evidence.push(`a session active ${relTime(live.lastAt)}`);
+    const ws = Object.values(data.workspaces).find((w) => w.git && idsIn(w.branch).has(st.id) && w.lastCommit && now() - w.lastCommit.at < 2 * DAY);
+    if (ws) evidence.push(`a commit in ${ws.repo} ${relTime(ws.lastCommit.at)}`);
+    if (!evidence.length) continue;
+    items.push({ key: `drift:${st.id}:${st.column}`, kind: 'drift', icon: '🧭', weight: 2,
+      html: `${link(st.url, `#${st.id} ${trunc(st.title, 60)}`)} is <b>${esc(st.column)}</b> on the board, but has ${evidence.join(', ')}. Move it?` });
+  }
+
+  // Forgotten work: local changes nobody has touched for a day.
+  for (const [cwd, w] of Object.entries(data.workspaces)) {
+    if (!w.git) continue;
+    const touched = Math.max(w.lastCommit?.at ?? 0, ...ss.filter((x) => x.main.project === cwd).map((x) => x.lastAt));
+    if (now() - touched < DAY) continue;
+    const bits = [];
+    if (w.changed + w.untracked) bits.push(`${w.changed + w.untracked} uncommitted change${w.changed + w.untracked > 1 ? 's' : ''}`);
+    if (w.ahead) bits.push(`${w.ahead} unpushed commit${w.ahead > 1 ? 's' : ''}`);
+    if (w.ahead == null && !/^(main|master|develop)$/.test(w.branch)) bits.push('a branch that was never pushed');
+    if (!bits.length) continue;
+    items.push({ key: `stale:${cwd}:${touched}`, kind: 'stale', icon: '🧳', weight: 5,
+      html: `<b>${esc(w.repo)}</b> <span class="branch">${esc(w.branch)}</span> has ${bits.join(' and ')}, untouched for ${ago(touched)}` });
+  }
+  return items.sort((a, b) => a.weight - b.weight);
+}
+
+function renderAttention(items) {
+  const live = items.filter((i) => !(snoozed[i.key] > Date.now()));
+  const hidden = items.length - live.length;
+  document.title = live.length ? `(${live.length}) Agent Dashboard` : 'Agent Dashboard';
+  $('attentionCount').textContent = live.length || '';
+  $('showSnoozed').hidden = !hidden;
+  $('showSnoozed').textContent = `Show ${hidden} snoozed`;
+  $('attention').innerHTML = live.length
+    ? `<ul class="attention">${live.map((i) => `<li class="k-${i.kind}"><span class="ico">${i.icon}</span><span class="txt">${i.html}</span>
+        <button class="snooze" data-snooze="${esc(i.key)}" title="Hide for a day">Snooze</button></li>`).join('')}</ul>`
+    : '<p class="empty">All clear. Nothing needs you right now.</p>';
+}
+
+// Desktop notifications for new waiting sessions and review requests (not on first load).
+let seen = null;
+const alertsWanted = () => { try { return localStorage.getItem('dash-alerts') === '1'; } catch { return false; } };
+function syncAlertButton() {
+  const on = alertsWanted() && 'Notification' in window && Notification.permission === 'granted';
+  $('alerts').textContent = on ? '🔔 Alerts on' : '🔕 Alerts off';
+  $('alerts').classList.toggle('on', on);
+  if (!('Notification' in window)) { $('alerts').disabled = true; $('alerts').title = 'This browser has no notifications'; }
+  else if (Notification.permission === 'denied') $('alerts').title = 'Notifications are blocked for this site in your browser settings';
+}
+$('alerts').addEventListener('click', async () => {
+  const want = !alertsWanted();
+  if (want && Notification.permission !== 'granted') await Notification.requestPermission();
+  try { localStorage.setItem('dash-alerts', want && Notification.permission === 'granted' ? '1' : '0'); } catch { /* storage unavailable */ }
+  syncAlertButton();
+});
+syncAlertButton();
+
+function alertOnNew(items) {
+  const alertable = items.filter((i) => i.alert && !(snoozed[i.key] > Date.now()));
+  if (seen && alertsWanted() && Notification.permission === 'granted') {
+    for (const i of alertable) {
+      if (seen.has(i.key)) continue;
+      const n = new Notification(i.title, { tag: i.key, body: i.kind === 'waiting' ? 'Claude Code session needs your input' : 'Azure DevOps' });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  }
+  seen = new Set(alertable.map((i) => i.key));
 }
 
 function connect() {
