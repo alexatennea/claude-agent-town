@@ -56,13 +56,15 @@ if (opts.demo) {
 
 const watcher = new ClaudeWatcher({ projectsDir, sinceHours: Number(opts.hours) || 12 });
 
-const azdo = opts['ado-org'] ? new AzDoPrs({ org: opts['ado-org'], tenant: opts['ado-tenant'], project: opts['ado-project'], team: opts['ado-team'] }) : null;
+const REFRESH_CHOICES = [30, 60, 120, 300, 900]; // seconds, offered in the dashboard
+let refreshSeconds = REFRESH_CHOICES.includes(Number(process.env.REFRESH_SECONDS)) ? Number(process.env.REFRESH_SECONDS) : 60;
+const azdo = opts['ado-org'] ? new AzDoPrs({ org: opts['ado-org'], tenant: opts['ado-tenant'], project: opts['ado-project'], team: opts['ado-team'], intervalMs: refreshSeconds * 1000 }) : null;
 azdo?.start();
 const workspaces = new Workspaces({ cwds: () => watcher.snapshot().map((a) => a.project) });
 
 const clients = new Set();
 let pending = null;
-const payload = () => JSON.stringify({ now: Date.now(), demo: opts.demo, agents: watcher.snapshot(), prs: azdo?.snapshot() ?? null, workspaces: workspaces.snapshot() });
+const payload = () => JSON.stringify({ now: Date.now(), demo: opts.demo, agents: watcher.snapshot(), prs: azdo?.snapshot() ?? null, workspaces: workspaces.snapshot(), refresh: { seconds: refreshSeconds, choices: REFRESH_CHOICES } });
 function broadcast() {
   if (pending) return;
   pending = setTimeout(() => {
@@ -87,6 +89,32 @@ const server = http.createServer((req, res) => {
     clients.add(res);
     req.on('close', () => clients.delete(res));
     return;
+  }
+  // Writes need a JSON body, which a cross-site form can't send without a CORS preflight.
+  if (req.method === 'POST' && (req.headers['content-type'] || '').startsWith('application/json')) {
+    if (url.pathname === '/api/refresh') {
+      Promise.all([azdo?.refresh(), workspaces.refresh()]).then(() => {
+        broadcast();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(payload());
+      });
+      return;
+    }
+    if (url.pathname === '/api/settings') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 1e4) req.destroy(); });
+      req.on('end', () => {
+        let seconds;
+        try { seconds = Number(JSON.parse(body || '{}').refreshSeconds); } catch { seconds = NaN; }
+        if (!REFRESH_CHOICES.includes(seconds)) { res.writeHead(400); return res.end('bad refreshSeconds'); }
+        refreshSeconds = seconds;
+        azdo?.setIntervalMs(seconds * 1000);
+        broadcast();
+        res.writeHead(204);
+        res.end();
+      });
+      return;
+    }
   }
   if (url.pathname === '/api/state') {
     res.writeHead(200, { 'Content-Type': 'application/json' });

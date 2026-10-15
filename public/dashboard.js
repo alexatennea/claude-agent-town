@@ -70,6 +70,8 @@ function render() {
   const sprint = ado?.sprint;
   const storyIds = new Set(sprint?.stories?.map((s) => s.id) ?? []);
   const linkedIds = (...t) => [...idsIn(...t)].filter((id) => storyIds.has(id));
+  $('updated').textContent = ado?.fetchedAt ? `Updated ${relTime(ado.fetchedAt)}` : '';
+  $('updated').title = ado?.fetchedAt ? `Azure DevOps last fetched ${new Date(ado.fetchedAt).toLocaleTimeString()}` : '';
   const attention = attentionItems(ss, ado, sprint);
   renderAttention(attention);
   alertOnNew(attention);
@@ -408,6 +410,31 @@ function alertOnNew(items) {
   seen = new Set(alertable.map((i) => i.key));
 }
 
+// ---------- refresh controls ----------
+const fmtEvery = (sec) => (sec < 60 ? `${sec}s` : `${sec / 60} min`);
+function syncRefresh() {
+  const r = data.refresh;
+  const sel = $('refreshEvery');
+  if (!r) return;
+  if (sel.options.length !== r.choices.length) sel.innerHTML = r.choices.map((c) => `<option value="${c}">${fmtEvery(c)}</option>`).join('');
+  if (document.activeElement !== sel) sel.value = String(r.seconds);
+}
+const post = (path, body = {}) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+$('refreshEvery').addEventListener('change', (ev) => post('/api/settings', { refreshSeconds: Number(ev.target.value) }));
+$('refreshNow').addEventListener('click', async () => {
+  const b = $('refreshNow');
+  b.disabled = true;
+  b.textContent = '↻ Refreshing…';
+  try {
+    data = await (await post('/api/refresh')).json();
+    clockOffset = data.now - Date.now();
+    render();
+  } finally {
+    b.disabled = false;
+    b.textContent = '↻ Refresh';
+  }
+});
+
 function connect() {
   const es = new EventSource('/events');
   es.onopen = () => { $('conn').className = 'dot on'; $('conn').title = 'live'; };
@@ -416,6 +443,7 @@ function connect() {
     data = JSON.parse(ev.data);
     clockOffset = data.now - Date.now();
     $('mode').hidden = !data.demo;
+    syncRefresh();
     render();
   };
 }

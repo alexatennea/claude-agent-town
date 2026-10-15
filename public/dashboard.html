@@ -12,6 +12,11 @@
     <h1>🏘️ Agent Town <span id="conn" class="dot" title="connecting"></span></h1>
     <nav class="tabs"><a href="/">Town</a><a href="/dashboard" class="on">Dashboard</a></nav>
     <span id="mode" class="badge" hidden>DEMO</span>
+    <span class="refresh">
+      <span id="updated" class="muted"></span>
+      <label class="muted" title="How often to re-fetch Azure DevOps">Every <select id="refreshEvery"></select></label>
+      <button id="refreshNow" class="btn" title="Re-fetch Azure DevOps and git status now">↻ Refresh</button>
+    </span>
     <button id="alerts" class="alerts" title="Desktop notification when a session starts waiting for you or a review is requested">🔕 Alerts off</button>
   </header>
 

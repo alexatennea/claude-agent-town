@@ -51,7 +51,12 @@ body.dash { display: block; overflow: auto; font-size: 13px; }
 .my-vote { display: block; font-size: 12px; padding: 0 6px 6px; margin-top: -4px; }
 
 /* attention */
-.alerts { margin-left: auto; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
+.refresh { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.refresh select { padding: 3px 6px; font-size: 12px; margin-left: 4px; }
+.btn { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
+.btn:hover:not(:disabled) { color: var(--text); }
+.btn:disabled { opacity: .6; cursor: progress; }
+.alerts { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
 .alerts:hover { color: var(--text); }
 .alerts.on { color: var(--text); border-color: var(--accent); }
 .linkish { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
@@ -168,5 +173,6 @@ table.members { width: 100%; border-collapse: collapse; margin-top: 12px; }
   .members .bar-cell { display: none; }
   .grid { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .topbar { padding: 10px 16px; gap: 10px; flex-wrap: wrap; }
+  #updated { display: none; }
   .sessions .what, .sessions th:nth-child(3) { display: none; }
 }
